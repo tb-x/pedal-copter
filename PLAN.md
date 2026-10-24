@@ -2,7 +2,8 @@
 
 Drafted 2026-10-24. Status: milestones 1–5 done on 2026-10-24 (prototype, art, all 12 levels, polish and sound,
 release prep). Still to do from milestone 5: a playtest on a real phone through the telemetry server (frame times,
-an older phone). Next: milestone 6, publishing (ask first). Recorded sound is proposed in `SOUND-PLAN.md`.
+an older phone). Milestone 6 done 2026-10-24: public repo tb-x/pedal-copter, live at https://tb-x.github.io/pedal-copter/ and on
+the landing page. Recorded sound (voices, effects, music) is in, see `SOUND-PLAN.md`.
 
 Built differently from this plan (milestone 3):
 - Levels 6 and 7 have four stops, not five (the rock steps and caves need the room).

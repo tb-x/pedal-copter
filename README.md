@@ -10,7 +10,7 @@ made in the browser.
 
 - 🏠 in the corner goes back to the list of all games.
 
-**Play:** https://tb-x.github.io/pedal-copter/ (once published; it isn't yet).
+**Play:** https://tb-x.github.io/pedal-copter/
 
 ## What you see
 
