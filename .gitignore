@@ -1,0 +1,3 @@
+# local Claude settings (paths on this PC)
+.claude/settings.local.json
+review/

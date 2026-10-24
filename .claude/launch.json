@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "pedal-copter",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "5229"],
+      "port": 5229
+    }
+  ]
+}
