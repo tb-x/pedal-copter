@@ -12,6 +12,9 @@ Changed after publishing (2026-10-26, at the user's request):
 - Palms with one curved trunk of stacked, lipped segments and arching feathery fronds.
 - Then: lumpy, varied rock (plates, grooves, colour patches, moss on ledges, a jagged crest), and the power-ups drop
   from palms as coconuts instead of floating up.
+- Then: a real volcano shape, scree slopes, a leaning back wall with rock shelves, a pterodactyl nest (background
+  flyers keep above the crags), a different doorway for each kind of cave, and a pose system that keeps passengers
+  busy (idle acts, moods, excitement, riding, cheering).
 
 Built differently from this plan (milestone 3):
 - Levels 6 and 7 have four stops, not five (the rock steps and caves need the room).

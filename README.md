@@ -16,8 +16,10 @@ made in the browser.
 
 The valley is a rocky mountainside: lumpy cliffs of rock plates and chips with grooves between them, bulges and dents,
 patches of sandy, ochre, grey and reddish rock, moss on the ledges that face the sky and plants growing in the cracks,
-jagged boulders at their feet, crags along the skyline, and a meadow of grass and flowers in front. Palms have trunks
-of stacked segments, each jutting out in a lip. Everything is built in code; there are no picture files.
+jagged boulders and grown-over scree slopes at their feet, and a meadow of grass and flowers in front. Above the caves
+the back wall leans back, with rock shelves jutting out of it (grass and ferns on top), up to a jagged skyline of crags
+and tors. Palms have trunks of stacked segments, each jutting out in a lip. Everything is built in code; there are no
+picture files.
 
 - **Caves** are rooms cut open at the front, each with ochre paintings on the walls (mammoths and hunters, fruit
   trees, fish, flames) and someone at home: a cave person stirring a pot by the fire with a baby asleep on a fur bed
@@ -25,7 +27,12 @@ of stacked segments, each jutting out in a lip. Everything is built in code; the
   (fishing stop), a cook turning meat on a spit (campfire stop). People waiting walk out of the tunnel at the back.
   Later stops add a painting cave (a kid painting the wall, pots of paint), a hot spring (someone soaking in a
   steaming pool), a wheel workshop (stone wheels and a worker with a hammer) and a dino nest (spotted eggs, one
-  wobbling, and a kid watching it).
+  wobbling, and a kid watching it). Each kind of cave has its own doorway, too: homes have a rim of round stones, a
+  hide curtain rolled up at the side and a mat; the fruit cave is framed with leaves and hanging fruit; the fishing
+  cave has a log frame with a net and fish hung on strings; the campfire cave is sooty above the door with embers
+  glowing on the step; the painting cave has colourful handprints round its rim; the hot spring is mossy, with ferns
+  and steam drifting out; the wheel workshop has a stone doorway and a wheel leaning beside it; the nest has big
+  feathers stuck round its rim. Their doorways are wider, taller or rougher to match.
 - **Stops** are whole ledges: a carved plaque shows their number and picture,
   and a torch.
 - **The copter** is a woven basket with a rounded bow on curled log skids, rails lashed with vines, a stone pedal
@@ -35,9 +42,19 @@ of stacked segments, each jutting out in a lip. Everything is built in code; the
   you) and banks into the turn, dips its nose when flying forward, and the pilot and riders keep facing you. The
   pilot has a beard and a bone in his hair.
 - **People** wear spotted furs with a strap, a bead necklace with a tooth, and all sorts of hair (buns, spikes, long
-  hair, a bone tuft). Some are kids.
+  hair, a bone tuft). Some are kids. They're always doing something: walking turned the way they go (running to the
+  copter with arms out, skipping home, stomping off when fed up); waiting happily they look around shading their
+  eyes, stretch, hum, point the way they want to go, hop and scratch their heads; then they tap a foot with hands on
+  hips, cross their arms and shake their heads, and at the end jump up and down shaking their fists. When the copter
+  comes close they wave both arms and bounce. Riders hold the rails and look about, throw their arms up when it goes
+  fast, point at their stop as it comes near and grab their heads when it bumps. Delivered, they jump and spin round
+  with their arms up, and wave bye-bye at their cave door.
 - **Around them**: grass tufts, flowers, pebbles, ferns, roots hanging down the rock, palm and apple trees; behind
-  the back wall a plateau with palms, hills, a smoking volcano and drifting clouds.
+  the back wall a plateau with palms, hills, a smoking volcano (steep at the top and spreading out at its foot, with
+  ridges and gullies, a broken crater rim and boulders on its flanks) and drifting clouds. On levels with
+  pterodactyls there's a nest of sticks on the highest crag: two eggs, two chicks with their beaks wide open, and a
+  parent that sits on the rim feeding them, then flies a loop over the valley and comes back. Pterodactyls and birds
+  in the background always fly above the crags.
 - **Animals**: the dinosaurs have spotted, scaly skin, knees and feet, and tails and necks made of segments that
   bend. A little T-rex runs after a butterfly (level 1), legs and tail swinging, arms waving, turning round when the
   butterfly does, snapping at it and roaring now and then (when you hear the roar). A long-neck strolls behind the
@@ -169,8 +186,14 @@ All at the top of the script in `index.html`:
 | `BUMP_BOUNCE` | 0.45 | how much speed it keeps when it boings off rock |
 | `SKY_EXTRA` | 9 | how far above the level's picture the copter can climb (the camera follows) |
 | `ROCK_CELL`, `WALL_CELL` | 0.3, 0.4 | size of the little facets the rock steps and the back wall are cut into (smaller is lumpier but slower) |
-| `WALL_DEPTH` | 2.5 | how thick the back wall is; its face is pushed back into it up to 1.4 |
+| `WALL_DEPTH` | 3.8 | how thick the back wall is; its face is pushed back into it (dents plus the lean) |
 | `PALM_SEGMENTS` | 12 | how many stacked segments make a palm trunk |
+| `WALL_LEAN` | 0.12 | above the caves the back wall leans back this much per unit of height |
+| `SCREE_H`, `SCREE_DEPTH` | 0.6–1.4, 1.7 | the rubble slopes at the foot of each step: how high up the face, how far out |
+| `VOLCANO_RIDGES` | 9 | ridges running down the volcano |
+| `NEST_CYCLE`, `NEST_PERCH` | 22 s, 13 s | the nest parent's round, and how much of it she sits on the nest |
+| `CAVE_LOOKS` | per stop kind | each cave doorway's width, height, rim roughness and rim colour |
+| `IDLE_ACTS`, `IDLE_ACT_TIME` | 6 acts, 3.2 s | what happy waiting people do, and for how long each |
 | `CLIMB_HELP_BELOW` | 0.6 | follow-my-finger: a finger this far below a ledge's top (or higher) makes the copter climb over it first |
 | `TAKEOFF_HOP` | 1.6 | upward speed when lifting off |
 | `SPLASH_UP` | 4.5 | how fast the lake bounces the copter back up |

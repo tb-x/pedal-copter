@@ -794,14 +794,33 @@ function rockyBox(x0, x1, y0, y1, z0, z1, mats, off, cell) {   // off(x, y, z) -
     pos.setXYZ(i, x + dx - cx, y + dy - cy, z + dz - cz);
     const c = rockColor(x, y, bulge, id); col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
   }
-  geo.computeVertexNormals();
-  for (let i = 0; i < pos.count; i++) {                         // moss on the shelves that face the sky
-    const up = smooth01((nor.getY(i) - 0.35) / 0.4) * (0.5 + 0.5 * vnoise(pos.getX(i) * 0.7, pos.getZ(i) * 0.7 + pos.getY(i)));
-    if (up > 0) { _rc.setRGB(col[i * 3], col[i * 3 + 1], col[i * 3 + 2]).lerp(MOSS, up * 0.85); col[i * 3] = _rc.r; col[i * 3 + 1] = _rc.g; col[i * 3 + 2] = _rc.b; }
-  }
-  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  mossy(geo, col);
   const m = new THREE.Mesh(geo, mats); m.position.set(cx, cy, cz);
   return shadowed(m);
+}
+function mossy(geo, col, k = 0.85) {   // normals, then moss on whatever faces the sky, then the colours on
+  geo.computeVertexNormals();
+  const pos = geo.attributes.position, nor = geo.attributes.normal;
+  for (let i = 0; i < pos.count; i++) {
+    const up = smooth01((nor.getY(i) - 0.35) / 0.4) * (0.5 + 0.5 * vnoise(pos.getX(i) * 0.7, pos.getZ(i) * 0.7 + pos.getY(i)));
+    if (up > 0) { _rc.setRGB(col[i * 3], col[i * 3 + 1], col[i * 3 + 2]).lerp(MOSS, up * k); col[i * 3] = _rc.r; col[i * 3 + 1] = _rc.g; col[i * 3 + 2] = _rc.b; }
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+}
+/* a scree slope: rubble heaped at the foot of a rock face, from the ground at zBot up to height h(x) where it meets the
+   face at zTop. Steeper near the top, lumpy, mostly grown over. */
+function scree(x0, x1, h, zTop, zBot, m) {
+  const nx = Math.max(2, Math.round((x1 - x0) / 0.3)), ny = 7, geo = new THREE.PlaneGeometry(1, 1, nx, ny);
+  const pos = geo.attributes.position, uv = geo.attributes.uv, col = new Float32Array(pos.count * 3);
+  for (let i = 0; i < pos.count; i++) {
+    const u = pos.getX(i) + 0.5, v = pos.getY(i) + 0.5, x = x0 + (x1 - x0) * u, hx = h(x);
+    const lump = vnoise(x * 1.7, v * 3) * 0.12 * Math.sin(Math.PI * v);
+    const y = Math.pow(v, 1.4) * hx + lump, z = zBot + (zTop - zBot) * v + lump * 0.8;
+    pos.setXYZ(i, x, y, z); uv.setXY(i, x / 4, z / 4);
+    const c = rockColor(x, y, vnoise(x * 2.3, z * 2.3)); col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
+  }
+  mossy(geo, col, 0.7);
+  return shadowed(new THREE.Mesh(geo, m), false);
 }
 function jaggedRockGeo(seed) {   // a boulder with flat broken faces: an icosahedron with its corners pulled in and out
   const geo = new THREE.IcosahedronGeometry(0.35, 1), pos = geo.attributes.position, v = new THREE.Vector3();
@@ -867,7 +886,7 @@ function scatter(grp, geo, material, items, cast = false) {   // items: { x, y, 
   if (!items.length) return null;
   const im = new THREE.InstancedMesh(geo, material, items.length);
   items.forEach((it, i) => {
-    im.setMatrixAt(i, _m4.compose(_v.set(it.x, it.y, it.z), _q.setFromEuler(_e.set(it.rx || 0, it.ry || 0, it.rz || 0)), _s.set(it.s, it.sy || it.s, it.s)));
+    im.setMatrixAt(i, _m4.compose(_v.set(it.x, it.y, it.z), _q.setFromEuler(_e.set(it.rx || 0, it.ry || 0, it.rz || 0)), _s.set(it.s, it.sy || it.s, it.sz || it.s)));
     if (it.c) im.setColorAt(i, _c.set(it.c));
   });
   im.castShadow = cast; im.receiveShadow = true; grp.add(im);
@@ -921,7 +940,9 @@ const CAVE = { R: 1.15, H: 1.75, D: 1.35, RIM: 0.22 };   // cave rooms: half wid
 const ROCK_TINTS = ['#EDE6DA', '#DDD4C6', '#F4EEE4', '#D2CABC', '#F0D6BC', '#C9CFD4'];   // boulders: light tints, so the rock texture keeps its own colour
 const PALM_SEGMENTS = 12;                   // how many stacked segments make a palm trunk
 const ROCK_CELL = 0.3, WALL_CELL = 0.4;   // size of the rock facets on the steps and on the back wall
-const WALL_DEPTH = 2.5;                      // the back wall's thickness (its face is pushed back into it up to 1.4)
+const WALL_DEPTH = 3.8;                      // the back wall's thickness (its face is pushed back into it up to ~2.6)
+const WALL_LEAN = 0.12;                     // above the caves the back wall leans back this much per unit of height
+const SCREE_H = [0.6, 1.4], SCREE_DEPTH = 1.7;   // rubble slopes at the foot of each step: how high up the face, how far out
 function surfaceAt(L, x) { let y = 0; for (const [a, b, top] of L.blocks) if (x >= a && x <= b) y = Math.max(y, top); return y; }
 function wallTopOf(L) { return Math.max(Math.max(0, ...L.blocks.map((b) => b[2])) + 3.7, L.h * 0.62); }
 function buildWorld(L, stops) {
@@ -950,7 +971,9 @@ function buildWorld(L, stops) {
   const crest = (x) => fallCalm(x) * (2.6 * Math.max(0, vnoise(x * 0.27 + nx, 1.3)) + 0.7 * Math.abs(vnoise(x * 1.1 + nx, 4.1)));   // the wall's jagged skyline
   const wallOff = (x, y) => {
     const top = smooth01((y - wallTop + 1.8) / 1.8), [rv, id] = rockRelief(x, y, nx + 50), v = rv * (1 - top) - top;   // the top leans back: no big overhang shading the wall
-    const dz = -(0.1 + 0.65 * (1 - v)) * fallCalm(x);         // only ever pushed back, so nothing on its face sinks in
+    const floor = [-2, -1, 0, 1, 2].reduce((sum, d) => sum + surfaceAt(L, x + d), 0) / 5;   // (smoothed, so no seams)
+    const lean = WALL_LEAN * Math.max(0, y - floor - 2.3);          // leaning back above the caves and plaques
+    const dz = -(0.1 + 0.65 * (1 - v) + lean) * fallCalm(x);  // only ever pushed back, so nothing on its face sinks in
     return [0, crest(x) * smooth01((y - wallTop + 3) / 3), dz, v, id];
   };
   const faceZ = (i, x, y) => Z_FRONT + blockOff(L.blocks[i])(x, y, Z_FRONT)[2];   // where block i's front face really is
@@ -963,6 +986,9 @@ function buildWorld(L, stops) {
     lip.position.set((a + b) / 2, top - 0.1, (Z_FRONT + Z_BACK) / 2 + 0.04); stat.add(lip);
     const roll = cyl(0.1, 0.1, b - a + 0.16, grassM, 8); roll.rotation.z = Math.PI / 2; roll.position.set((a + b) / 2, top - 0.1, Z_FRONT + 0.08); stat.add(roll);
     for (let x = a + 0.5 + r() * 1.2; x < b - 0.4; x += 1.6 + r() * 2) stat.add(vine(x, top - 0.08, Z_FRONT + 0.12, 0.6 + r() * Math.min(1.8, top - 0.8), r));
+    const ends = (x) => smooth01(Math.min(x - a, b - x) / 0.8);   // lower where the step ends
+    const hx = (x) => Math.min(top * 0.4, SCREE_H[0] + (SCREE_H[1] - SCREE_H[0]) * (0.5 + 0.5 * vnoise(x * 0.4 + nx, 7))) * (0.35 + 0.65 * ends(x));
+    stat.add(scree(a, b, hx, Z_FRONT - 0.25, Z_FRONT + SCREE_DEPTH, rockM));
   }
   grp.add(rockyBox(gx0, gx1, -1.2, wallTop, Z_BACK - WALL_DEPTH, Z_BACK, six(backM, backM), wallOff, WALL_CELL));
   const plateau = worldBox(gx0 - 50, gx1 + 50, wallTop - 10, wallTop, -80, Z_BACK - WALL_DEPTH + 0.05, six(grassM, backM)); plateau.castShadow = false; grp.add(plateau);   // (behind the wall's deepest dents)
@@ -970,11 +996,30 @@ function buildWorld(L, stops) {
   for (let x = gx0 + 1; x < gx1; x += 1.3 + r() * 2.2) {               // crags and tors along the top of the wall
     if (fallCalm(x) < 0.5) continue;
     const tall = r() < 0.3;
-    crags.push({ x, y: wallTop + crest(x) * 0.5, z: Z_BACK - 1.2 - r() * 1.6, s: 1.6 + r() * 2.4, sy: tall ? 2 + r() * 2 : 0.8 + r() * 0.8, ry: r() * 6, rz: (r() - 0.5) * 0.3, c: pick(r, ROCK_TINTS) });
+    crags.push({ x, y: wallTop + crest(x) * 0.5, z: wallZ(x, wallTop) - 0.4 - r() * 1.6, s: 1.6 + r() * 2.4, sy: tall ? 2 + r() * 2 : 0.8 + r() * 0.8, ry: r() * 6, rz: (r() - 0.5) * 0.3, c: pick(r, ROCK_TINTS) });
+  }
+  if (L.pteros || (L.decor || []).includes('ptero')) {
+    let nx0 = L.w / 2, best = -1;
+    for (let x = L.w * 0.12; x < L.w * 0.88; x += 0.25) if (fallCalm(x) >= 1 && !nearStop(x, 1) && crest(x) > best) { best = crest(x); nx0 = x; }
+    const ny = wallTop + crest(nx0), nz = wallZ(nx0, wallTop) - 0.9;
+    const v = crags.length % 3, geo = (GEO['rock' + v] ||= jaggedRockGeo(v + 1)); geo.computeBoundingBox();
+    const crag = { x: nx0, y: ny - 0.25, z: nz, s: 2.4, sy: 1, sz: 1.7, ry: 0, c: ROCK_TINTS[0] }; crags.push(crag);   // the crag it sits on
+    pteroNest(grp, stat, anims, nx0, crag.y + geo.boundingBox.max.y * crag.s * crag.sy - 0.2, nz, (x) => sky(x));   // (sky is worked out further down, once every crag is placed)
+  }
+  const shelves = [], shelfTufts = [];
+  for (let x = gx0 + 2 + r() * 3; x < gx1 - 2; x += 3 + r() * 4) {    // rock shelves jutting out of the wall, grown over
+    if (nearStop(x, 0.9) || fallCalm(x) < 1) continue;
+    const lo = surfaceAt(L, x) + 3, hi = wallTop - 1.6;
+    if (hi < lo) continue;
+    const y = lo + r() * (hi - lo), z = wallZ(x, y) + 0.35, w = 3 + r() * 2.5;
+    shelves.push({ x, y, z, s: w, sy: 0.8 + r() * 0.5, sz: 2.2, ry: (r() - 0.5) * 0.3, c: pick(r, ROCK_TINTS) });
+    for (let k = 0; k < 5; k++) shelfTufts.push({ x: x + (r() - 0.5) * w * 0.5, y: y + 0.2, z: z + (r() - 0.5) * 0.4, s: 0.7 + r() * 0.6, ry: r() * 6, c: pick(r, TOD.snow ? ['#EEF2F5', '#C8D6DE'] : ['#6E9A3E', '#7FAE4A', '#5E8C38']) });
+    if (!TOD.snow && r() < 0.6) stat.add(fern(x + (r() - 0.5) * w * 0.3, y + 0.18, z, 0.45 + r() * 0.25, r));
   }
   for (let x = gx0 + 2; x < gx1 - 1; x += 2.2 + r() * 2.5) {          // roots and creepers down the back wall
     if (nearStop(x) || inFall(x)) continue;
-    stat.add(vine(x, wallTop - 0.05, wallZ(x, wallTop - 1) + 0.06, 1 + r() * 2.8, r));
+    const len = 1 + r() * 2.8;
+    stat.add(vine(x, wallTop - 0.05, Math.max(wallZ(x, wallTop - 0.6), wallZ(x, wallTop - len)) + 0.06, len, r));
   }
   for (let x = -1 + r(); x < L.w + 1; x += 1.3 + r() * 1.6) {         // ferns at the foot of the wall
     const y = surfaceAt(L, x);
@@ -1019,19 +1064,20 @@ function buildWorld(L, stops) {
     }
     for (let x = a + 0.3 + r(); x < b - 0.2; x += 0.9 + r() * 1.6) {
       if (surfaceAt(L, x) !== top) continue;   // (in front of a taller step that overlaps this one)
-      boulders.push({ x, y: 0.05, z: faceZ(bi, x, 0.3) + 0.2 + r() * 0.4, s: 0.9 + r() * 1.6, sy: 0.6 + r() * 0.6, ry: r() * 6, c: pick(r, ROCK_TINTS) });
+      boulders.push({ x, y: 0.05, z: Z_FRONT + SCREE_DEPTH - 0.2 + r() * 0.5, s: 0.9 + r() * 1.6, sy: 0.6 + r() * 0.6, ry: r() * 6, c: pick(r, ROCK_TINTS) });
     }
   });
   for (let x = gx0 + 1; x < gx1 - 1; x += 1.4 + r() * 2) {    // the back wall: plants in its cracks too
     if (nearStop(x, 0.4) || inFall(x)) continue;
     for (let k = 0; k < 2; k++) { const tx = x + r(), ty = surfaceAt(L, x) + 1 + r() * (wallTop - surfaceAt(L, x) - 1.5); cliffTufts.push({ x: tx, y: ty, z: wallZ(tx, ty) - 0.03, s: 0.7 + r() * 0.6, rx: 1.2, ry: r() * 0.5, c: pick(r, ['#6E9A3E', '#5E8C38']) }); }
   }
-  scatter(grp, tuftGeo(), mat('#ffffff', { side: THREE.DoubleSide }), tufts.concat(cliffTufts));
+  scatter(grp, tuftGeo(), mat('#ffffff', { side: THREE.DoubleSide }), tufts.concat(cliffTufts, shelfTufts));
   const boulderM = mat('#ffffff', { map: rockTex(), roughness: 0.95, flatShading: true });
   for (let v = 0; v < 3; v++) {                               // three boulder shapes, so no two neighbours look alike
     const geo = (GEO['rock' + v] ||= jaggedRockGeo(v + 1));
     scatter(grp, geo, boulderM, boulders.filter((_, i) => i % 3 === v), true);
     scatter(grp, geo, boulderM, crags.filter((_, i) => i % 3 === v), false);
+    scatter(grp, geo, boulderM, shelves.filter((_, i) => i % 3 === v), true);
   }
   scatter(grp, (GEO.flower ||= new THREE.SphereGeometry(0.065, 6, 5)), mat('#ffffff', { roughness: 0.6 }), flowers);
   scatter(grp, (GEO.pebble ||= new THREE.DodecahedronGeometry(0.13, 0)), mat('#ffffff', { roughness: 0.9 }), pebbles, true);
@@ -1061,7 +1107,7 @@ function buildWorld(L, stops) {
   if (L.waterfall) waterfall(grp, stat, L.waterfall, wallTop, anims);
   // far away: trees on the plateau, hills, the volcano and its smoke, clouds, the sun or moon, stars
   for (let k = 0; k < 16; k++) {
-    const x = gx0 + r() * (gx1 - gx0), z = -6.5 - r() * 16;
+    const x = gx0 + r() * (gx1 - gx0), z = Z_BACK - WALL_DEPTH - 1 - r() * 16;
     const t = buildTree(TOD.snow ? 'pine' : r() < 0.65 ? 'palm' : 'bush', x, wallTop, z, r); t.scale.setScalar(1.1 + r() * 0.9); stat.add(t);
   }
   const hillM = mat(TOD.snow ? '#E6EDF2' : '#8FB07A'), hillM2 = mat(TOD.snow ? '#F2F5F8' : '#A6BF8E');
@@ -1108,26 +1154,36 @@ function buildWorld(L, stops) {
     const d = tr.userData.drop; if (d) drops.push({ kind, x: x + d[0], y: surfaceAt(L, x) + d[1], z: Z_BACK + 0.9 + d[2] });
   };
   for (const [x, kind] of L.trees || []) plant(kind, x);
-  const clearance = (x, plaque) => {   // room around a palm at x: clear of plaques (by this much), caves, ledge edges, other trees, water, the sleeper
+  const clearance = (x, plaque, door) => {   // room around a palm at x: clear of plaques (by this much), caves, ledge edges, other trees, water, the sleeper
     const out = (a, b, pad) => (x > a - pad && x < b + pad ? -1 : 9);
-    return Math.min(x - 1, L.w - 1 - x, ...stops.map((s) => Math.min(Math.abs(x - s.x) - plaque, Math.abs(x - s.caveX) - (CAVE.R + CAVE.RIM + 0.35))),
+    return Math.min(x - 1, L.w - 1 - x, ...stops.map((s) => Math.min(Math.abs(x - s.x) - plaque, Math.abs(x - s.caveX) - (CAVE.R + CAVE.RIM + door))),
       ...L.blocks.flatMap(([a, b]) => [Math.abs(x - a) - 0.9, Math.abs(x - b) - 0.9]), ...(L.trees || []).map(([tx]) => Math.abs(x - tx) - 2.2),
       inFall(x) ? -1 : 9, L.lake ? out(L.lake[0], L.lake[1], 0.6) : 9, L.sleeper ? out(L.sleeper[0], L.sleeper[1], 0.8) : 9);
   };
   for (let x = 4; x < L.w - 2; x += DROP_TREE_GAP) {
     if (drops.some((d) => Math.abs(d.x - x) < DROP_TREE_GAP * 0.6)) continue;
-    for (const plaque of [1.75, 1.0]) {                          // fronds well clear of the plaques, or else close by and leaning away
+    for (const [plaque, door] of [[1.75, 0.8], [1.0, 0.8], [1.0, 0.35]]) {   // fronds well clear of plaques and doorways, or else closer and leaning away
       let best = x, room = -9;                                  // the roomiest spot within 5 of here
-      for (let tx = x - 5; tx <= x + 5; tx += 0.1) { const c = clearance(tx, plaque); if (c > room) { room = c; best = tx; } }
+      for (let tx = x - 5; tx <= x + 5; tx += 0.1) { const c = clearance(tx, plaque, door); if (c > room) { room = c; best = tx; } }
       if (room < 0.1) continue;
-      const near = stops.reduce((a, b) => (Math.abs(a.x - best) < Math.abs(b.x - best) ? a : b));
-      plant(TOD.snow ? 'pine' : 'palm', best, plaque < 1.75 ? Math.sign(best - near.x) : 0);
+      const near = stops.flatMap((s) => [s.x, s.caveX]).reduce((a, b) => (Math.abs(a - best) < Math.abs(b - best) ? a : b));
+      plant(TOD.snow ? 'pine' : 'palm', best, plaque < 1.75 || door < 0.8 ? Math.sign(best - near) : 0);
       break;
     }
   }
   for (const st of stops) buildStop(st, stat, grp, anims, r);
   const before = grp.children.length;
-  for (const d of L.decor || []) ANIMALS[d]?.(grp, L, anims, r, wallTop);
+  // the skyline the background flyers keep above: the crest and every crag, the highest within ±3, smoothed
+  const SKY_STEP = 0.5, tops = [];
+  for (let x = gx0 - 4; x <= gx1 + 4; x += SKY_STEP) {
+    let top = wallTop + crest(x);
+    for (const c of crags) if (Math.abs(c.x - x) < c.s * 0.45) top = Math.max(top, c.y + c.s * c.sy * 0.37);
+    tops.push(top);
+  }
+  const high = tops.map((_, i) => Math.max(...tops.slice(Math.max(0, i - 6), i + 7)));
+  const smoothTop = high.map((_, i) => { const w = high.slice(Math.max(0, i - 4), i + 5); return w.reduce((a, b) => a + b, 0) / w.length; });
+  const sky = (x) => { const f = clamp((x - gx0 + 4) / SKY_STEP, 0, smoothTop.length - 1.001), i = Math.floor(f); return smoothTop[i] + (smoothTop[i + 1] - smoothTop[i]) * (f - i); };
+  for (const d of L.decor || []) ANIMALS[d]?.(grp, L, anims, r, wallTop, sky);
   for (const o of grp.children.slice(before)) o.traverse((m) => (m.castShadow = false));   // animals are far off or small: skip the shadow pass
   if (TOD.flies) fireflies(grp, L, anims, r);
   if (L.sleeper) sleepyBronto(grp, L.sleeper, anims);
@@ -1136,20 +1192,117 @@ function buildWorld(L, stops) {
   bake(stat);
   return grp;
 }
-/* the volcano far behind (or close, erupting, on the feast level) */
+/* a pterodactyl nest on a crag on top of the wall: a heap of sticks with two eggs and two chicks squawking for food, and a
+   parent that sits on the rim feeding them, then flies a loop over the valley and comes back */
+const NEST_CYCLE = 22, NEST_PERCH = 13;   // s: the parent's whole round, and how much of it is spent on the nest
+function pteroNest(grp, stat, anims, x, y, z, sky) {
+  const seat = shadowed(new THREE.Mesh((GEO.rock2 ||= jaggedRockGeo(3)), mat('#ffffff', { map: rockTex(), roughness: 0.95, flatShading: true, color: ROCK_TINTS[1] })));
+  seat.scale.set(4, 2.6, 3.4); seat.position.set(x, y - 0.62, z); stat.add(seat);   // a knob of rock the sticks are heaped on
+  const bowl = shadowed(new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.22, 8, 20), mat('#8A6A48'))); bowl.rotation.x = -Math.PI / 2; bowl.scale.z = 0.6; bowl.position.set(x, y + 0.1, z); stat.add(bowl);
+  const straw = new THREE.Mesh(new THREE.CircleGeometry(0.62, 16), mat('#B89A62')); straw.rotation.x = -Math.PI / 2; straw.position.set(x, y + 0.06, z); stat.add(straw);
+  const rn = mulberry32(77), twig = mat('#6B4A2A');
+  for (let k = 0; k < 18; k++) {                                // sticks laid round the rim, poking out every which way
+    const a = k / 18 * Math.PI * 2 + rn() * 0.3, st = cyl(0.025, 0.018, 0.8 + rn() * 0.6, twig, 4);
+    st.position.set(x + Math.cos(a) * 0.66, y + 0.14 + rn() * 0.12, z + Math.sin(a) * 0.66); st.rotation.set((rn() - 0.5) * 0.5, -a - Math.PI / 2, Math.PI / 2 + (rn() - 0.5) * 0.4); stat.add(st);
+  }
+  for (const [dx, dz] of [[-0.25, -0.15], [0.05, -0.28]]) {
+    const e = vcMesh([tint(PG.head, '#F2EAD6', M4(0, 0, 0, 0.6, 0.8, 0.6)), tint(PG.knob, '#C98A4A', M4(0.06, 0.06, 0.13)), tint(PG.knob, '#9C5BD6', M4(-0.07, -0.05, 0.12))]);
+    e.position.set(x + dx, y + 0.2, z + dz); stat.add(e);
+  }
+  const skin = mat('#D8A07A'), chicks = [-0.05, 0.3].map((dx, k) => {   // two chicks with their beaks wide open
+    const c = new THREE.Group(); c.position.set(x + dx, y + 0.12, z + 0.12 - k * 0.1); grp.add(c);
+    const body = ball(0.16, skin, 10); body.scale.set(1, 0.95, 0.9); body.position.y = 0.12; c.add(body);
+    const head = new THREE.Group(); head.position.set(0, 0.32, 0); c.add(head);
+    head.add(ball(0.12, skin, 10));
+    const up = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.2, 6), mat('#F2C040')); up.rotation.x = Math.PI / 2 + 0.15; up.position.set(0, 0.0, 0.17); head.add(up);
+    const jaw = new THREE.Group(); jaw.position.set(0, -0.03, 0.07); head.add(jaw);
+    const low = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.15, 6), mat('#E8A030')); low.rotation.x = Math.PI / 2; low.position.z = 0.08; jaw.add(low);
+    for (const ex of [-0.055, 0.055]) { const e = ball(0.03, mat('#1E1E26'), 6); e.position.set(ex, 0.05, 0.09); head.add(e); const h = ball(0.01, mat('#ffffff'), 4); h.position.set(ex + 0.01, 0.06, 0.115); head.add(h); }
+    const crest = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.14, 5), skin); crest.rotation.x = -1.1; crest.position.set(0, 0.08, -0.1); head.add(crest);
+    return { c, head, jaw, k };
+  });
+  const mom = buildPtero('#C88A6C'); mom.g.scale.setScalar(1.05); grp.add(mom.g);
+  const perch = new THREE.Vector3(x + 0.62, y + 0.32, z - 0.05);
+  anims.push((t) => {
+    const c = t % NEST_CYCLE, home = c < NEST_PERCH, feed = home && c > 1.5 && c < 6;
+    for (const ch of chicks) {                                   // stretching up, beaks snapping, louder when she's home
+      const want = home ? 1 : 0.35, ph = t * 7 + ch.k * 1.9;
+      ch.head.position.y = 0.32 + want * 0.06 * Math.max(0, Math.sin(ph * 0.5));
+      ch.head.rotation.z = Math.sin(t * 2.3 + ch.k) * 0.25; ch.head.rotation.x = feed ? -0.35 : -0.1;
+      ch.jaw.rotation.x = want * 0.55 * Math.max(0, Math.sin(ph));
+    }
+    if (home) {                                                  // on the rim: wings folded, now and then a stretch, dipping to feed
+      mom.g.position.copy(perch);
+      mom.g.rotation.set(0, Math.PI + 0.5 + Math.sin(t * 0.6) * 0.2, feed ? -0.45 * Math.max(0, Math.sin(t * 4)) - 0.15 : 0.1);   // facing the chicks
+      const stretch = c > 8 && c < 9.4 ? Math.sin((c - 8) / 1.4 * Math.PI) : 0;   // now and then a big stretch
+      for (const w of mom.wings) {                               // folded back along her sides
+        w.sh.rotation.set(w.s * (0.25 - stretch * 0.6), -w.s * 1.35 * (1 - stretch), 0); w.wr.rotation.set(0, w.s * 1.9 * (1 - stretch), 0);
+      }
+    } else {                                                     // a loop out over the valley and back
+      const th = (c - NEST_PERCH) / (NEST_CYCLE - NEST_PERCH) * Math.PI * 2;
+      const dx = Math.sin(th) * 8, dy = (1 - Math.cos(th)) * 1.4 + Math.sin(th / 2) * 3.5, dz = (1 - Math.cos(th)) * 1.6;
+      const clear = Math.sin(th / 2) * Math.max(0, sky(perch.x + dx) + 1.3 - perch.y - dy);   // up over any taller crag on the way
+      mom.g.position.set(perch.x + dx, perch.y + dy + clear, perch.z + dz);
+      const vx = Math.cos(th), vz = Math.sin(th);
+      mom.g.rotation.set(-vx * 0.35, Math.atan2(-vz, vx), 0);
+      for (const w of mom.wings) { w.sh.rotation.y = 0; w.wr.rotation.y = 0; }
+      mom.flap(t, 6);
+    }
+  });
+}
+/* the volcano far behind (or close, erupting, on the feast level): a cone that is steep at the top and spreads out at its
+   foot, with ridges and gullies running down it, a jagged crater rim, ash-dark at the top, brown lower down, green at its
+   foot (a snow cap in the snow). surface(a, f) is the point on it at angle a (0 faces us) and f down from the rim (0..1). */
+const VOLCANO_RIDGES = 9;          // how many ridges run down the volcano
+function volcanoSurface(a, f, R0, R1, H) {
+  const ca = Math.sin(a), cz = Math.cos(a);
+  const ridge = Math.pow(Math.abs(Math.sin(a * VOLCANO_RIDGES + vnoise(ca * 2 + f * 3, cz * 2) * 1.8)), 0.6);
+  const lumps = 0.1 * vnoise(ca * 1.3 + f * 2, cz * 1.3) + 0.06 * vnoise(ca * 3 + f * 5, cz * 3 - f * 4);   // shoulders and bumps
+  const r = (R0 + (R1 - R0) * Math.pow(f, 2.2)) * (1 + (0.13 * ridge + lumps) * Math.min(1, f * 4));
+  const notch = Math.max(0, Math.cos(a - 0.9)) ** 6;              // a broken bit of the rim, where the lava spills out
+  const y = H * (1 - f) + (f < 0.02 ? H * (0.07 * vnoise(ca * 4, cz * 4) - 0.1 * notch) : 0);
+  return [ca * r, y, cz * r, ridge];
+}
+function volcanoMesh(R0, R1, H) {
+  const geo = new THREE.CylinderGeometry(1, 1, 1, 96, 32, true), pos = geo.attributes.position, uv = geo.attributes.uv, col = new Float32Array(pos.count * 3);
+  const ash = new THREE.Color('#4E4442'), rock = new THREE.Color('#8E725E'), foot = new THREE.Color(TOD.snow ? '#E8EEF2' : '#7E9A5A'), snow = new THREE.Color('#F4F7FA');
+  for (let i = 0; i < pos.count; i++) {
+    const a = Math.atan2(pos.getX(i), pos.getZ(i)), f = 0.5 - pos.getY(i), [x, y, z, ridge] = volcanoSurface(a, f, R0, R1, H);
+    pos.setXYZ(i, x, y, z); uv.setXY(i, uv.getX(i) * 14, uv.getY(i) * 5);
+    _rc.copy(ash).lerp(rock, smooth01(f / 0.35)).lerp(foot, smooth01((f - 0.7) / 0.25));
+    if (TOD.snow) _rc.lerp(snow, 1 - smooth01((f - 0.2) / 0.2));
+    _rc.multiplyScalar(0.62 + 0.38 * ridge);                   // the gullies between the ridges are in shade
+    col[i * 3] = _rc.r; col[i * 3 + 1] = _rc.g; col[i * 3 + 2] = _rc.b;
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  geo.computeVertexNormals();
+  return new THREE.Mesh(geo, mat('#ffffff', { map: rockTex(), vertexColors: true, roughness: 1 }));
+}
 function volcano(grp, stat, L, wallTop, anims) {
   const near = L.volcano === 'near', vs = near ? 1.3 : 1, vz = near ? -48 : -85, vx = L.w * (near ? 0.55 : 0.72), vTop = wallTop + (near ? 19 : 16);
-  const volc = new THREE.Mesh(new THREE.CylinderGeometry(3 * vs, 17 * vs, 24 * vs, 22, 1, true), mat('#8C7362')); volc.position.set(vx, vTop - 12 * vs, vz); stat.add(volc);
+  const H = vTop - wallTop + 1.5, R0 = 3 * vs, R1 = H * 1.15;   // its foot stands on the plateau, so its skirt shows
+  const volc = volcanoMesh(R0, R1, H); volc.position.set(vx, vTop - H, vz); stat.add(volc);
+  const crater = new THREE.Mesh(new THREE.CircleGeometry(R0 * 0.95, 24), new THREE.MeshBasicMaterial({ color: near ? '#FF7A2A' : '#3A2C2A' }));
+  crater.rotation.x = -Math.PI / 2; crater.position.set(vx, vTop - 0.6 * vs, vz); stat.add(crater);
+  const outcrops = [], rv = mulberry32(31);
+  for (let k = 0; k < 46; k++) {                               // boulders and lava rock on its flanks
+    const a = (rv() - 0.5) * 2.8, f = 0.08 + rv() * 0.85, [x, y, z] = volcanoSurface(a, f, R0, R1, H);
+    outcrops.push({ x: vx + x, y: vTop - H + y, z: vz + z, s: (1.5 + rv() * 3) * vs * (0.5 + f), sy: 0.5 + rv() * 0.5, ry: rv() * 6, rx: rv(), c: pick(rv, ['#6E625C', '#8A7A6E', '#5A504C']) });
+  }
+  scatter(stat, (GEO.rock1 ||= jaggedRockGeo(2)), mat('#ffffff', { map: rockTex(), roughness: 1, flatShading: true }), outcrops);
   const lava = new THREE.Sprite(glowMat('#FF6A2A')); lava.position.set(vx, vTop + 0.5, vz + 1); lava.scale.set(10 * vs, 5 * vs, 1); grp.add(lava);
   const smokeM = new THREE.SpriteMaterial({ map: softDotTex(), color: near || TOD.name === 'night' ? '#6A6470' : '#EEE6DE', transparent: true, depthWrite: false });
   const smoke = Array.from({ length: near ? 10 : 7 }, (_, k) => { const s = new THREE.Sprite(smokeM.clone()); grp.add(s); return { s, k }; });
   const blobs = [];
   if (near) {
     const lavaM = new THREE.MeshBasicMaterial({ color: '#FF7A2A' });
-    for (const a of [-0.45, 0.05, 0.5]) {        // glowing streams down the slope facing us
+    for (const a0 of [-0.45, 0.05, 0.5]) {       // glowing streams down the slope facing us, each in a gully
       const pts = [];
-      for (let k = 0; k <= 6; k++) { const f = k / 6 * 0.55, rad = (3 + 14 * f) * vs; pts.push(new THREE.Vector3(vx + Math.sin(a + Math.sin(k) * 0.08) * rad, vTop - 24 * vs * f, vz + Math.cos(a) * rad + 0.2)); }
-      grp.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 16, 0.35, 6), lavaM));
+      for (let k = 0; k <= 10; k++) {
+        const f = 0.01 + k / 10 * 0.55, a = a0 + Math.sin(k * 0.9 + a0 * 7) * 0.04, [x, y, z] = volcanoSurface(a, f, R0, R1, H);
+        pts.push(new THREE.Vector3(vx + x * 1.01, vTop - H + y + 0.15, vz + z * 1.01));
+      }
+      grp.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 30, 0.35 * vs, 6), lavaM));
     }
     for (let k = 0; k < 6; k++) { const b = new THREE.Sprite(glowMat('#FF8A3A')); grp.add(b); blobs.push({ b, k }); }
   }
@@ -1378,16 +1531,28 @@ function addFlame(grp, anims, x, y, z, s, glowSize, lit) {   // a flickering fla
 }
 /* a cave room, cut open at the front like a diorama: a dome of rock with a cut edge, a dirt floor, a tunnel at the back,
    ochre paintings on the walls, and someone at home doing something */
+// each kind of stop has its own doorway: wider or taller, a smoother or rougher rim in its own rock, and its own things
+// round the door (see caveFront)
+const CAVE_LOOKS = {
+  home: { w: 1, h: 1, rough: 0.06, rim: '#ffffff' }, fruit: { w: 1.12, h: 0.88, rough: 0.04, rim: '#E8E0C8' },
+  fish: { w: 1, h: 0.95, rough: 0.05, rim: '#C8D4DA' }, fire: { w: 0.92, h: 1.12, rough: 0.12, rim: '#6A5A50' },
+  paint: { w: 1.05, h: 0.96, rough: 0.03, rim: '#F4E4CC' }, spring: { w: 1.12, h: 0.9, rough: 0.09, rim: '#A8C4B0' },
+  wheel: { w: 1.05, h: 0.92, rough: 0.02, rim: '#D8D0C4' }, nest: { w: 0.9, h: 1.15, rough: 0.08, rim: '#E8D8B0' },
+};
 function buildCave(st, stat, live, anims, r) {
-  const { R, H, D, RIM } = CAVE, cx = st.caveX, y = st.y, zf = Z_BACK + D;
+  const look = CAVE_LOOKS[st.kind] || CAVE_LOOKS.home, R = CAVE.R * look.w, H = CAVE.H * look.h, { D, RIM } = CAVE, cx = st.caveX, y = st.y, zf = Z_BACK + D;
   const shellGeo = (GEO.shell ||= new THREE.SphereGeometry(1, 28, 12, Math.PI, Math.PI, 0, Math.PI / 2));
   const wallM = new THREE.MeshStandardMaterial({ map: caveWallTex(st.kind), side: THREE.BackSide, roughness: 0.95, emissive: '#6A3416', emissiveIntensity: 0.2 });
   const inner = new THREE.Mesh(shellGeo, wallM); inner.scale.set(R, H, D); inner.position.set(cx, y, zf); inner.receiveShadow = true; live.add(inner);
   const outer = shadowed(new THREE.Mesh(shellGeo, mat('#9C8C78', { map: rockTex() }))); outer.scale.set(R + RIM, H + RIM, D + 0.05); outer.position.set(cx, y, zf - 0.02); stat.add(outer);
   const rimShape = new THREE.Shape(), N = 22;
-  for (let k = 0; k <= N; k++) { const a = Math.PI * k / N, px = Math.cos(a) * (R + RIM), py = Math.sin(a) * (H + RIM); k ? rimShape.lineTo(px, py) : rimShape.moveTo(px, py); }
+  const rr = mulberry32(((cx * 131) | 0) + 7);
+  for (let k = 0; k <= N; k++) {
+    const a = Math.PI * k / N, j = k && k < N ? 1 + look.rough * (rr() * 2 - 1) * 1.6 : 1, px = Math.cos(a) * (R + RIM) * j, py = Math.sin(a) * (H + RIM) * j;
+    k ? rimShape.lineTo(px, py) : rimShape.moveTo(px, py);
+  }
   for (let k = N; k >= 0; k--) { const a = Math.PI * k / N; rimShape.lineTo(Math.cos(a) * R, Math.sin(a) * H); }
-  const rim = shadowed(new THREE.Mesh(new THREE.ExtrudeGeometry(rimShape, { depth: 0.14, bevelEnabled: false, curveSegments: 1 }), mat('#ffffff', { map: rockUnitTex() })));
+  const rim = shadowed(new THREE.Mesh(new THREE.ExtrudeGeometry(rimShape, { depth: 0.14, bevelEnabled: false, curveSegments: 1 }), mat(look.rim, { map: rockUnitTex() })));
   rim.position.set(cx, y, zf - 0.06); stat.add(rim);
   const floor = new THREE.Mesh(new THREE.CircleGeometry(1, 20, 0, Math.PI), mat('#7A6450')); floor.rotation.x = -Math.PI / 2; floor.scale.set(R, D, 1); floor.position.set(cx, y + 0.012, zf); floor.receiveShadow = true; stat.add(floor);
   const arch = (w, h, color, z) => {
@@ -1500,6 +1665,77 @@ function buildCave(st, stat, live, anims, r) {
     const log = cyl(0.13, 0.13, 0.7, mat('#7A5638'), 8); log.rotation.z = Math.PI / 2; const [lx, lz] = L(-side * 0.5, 0.95); log.position.set(lx, y + 0.13, lz); stat.add(log);
     resident(-side * 0.55, 0.95, { sit: true }, 'turn');
   }
+  caveFront(st, stat, live, anims, cx, y, zf, R, H, RIM);
+}
+function netTex() {
+  return canvasTex('net', 64, 64, (g) => {
+    g.strokeStyle = '#D8C8A0'; g.lineWidth = 2;
+    for (let k = -64; k < 128; k += 12) { g.beginPath(); g.moveTo(k, 0); g.lineTo(k + 64, 64); g.stroke(); g.beginPath(); g.moveTo(k + 64, 0); g.lineTo(k, 64); g.stroke(); }
+  }, true);
+}
+function handTex() {           // a painted handprint (white, tinted by its material)
+  return canvasTex('hand', 64, 64, (g) => {
+    g.fillStyle = '#ffffff'; g.beginPath(); g.ellipse(32, 40, 13, 15, 0, 0, 7); g.fill();
+    for (let f = 0; f < 5; f++) { const a = -2.6 + f * 0.48; g.beginPath(); g.ellipse(32 + Math.cos(a) * 21, 40 + Math.sin(a) * 21, 4, 9, a + Math.PI / 2, 0, 7); g.fill(); }
+  });
+}
+/* the outside of a cave's doorway, different for each kind of stop: stacked stones and a rolled-up hide curtain (home),
+   leafy vines and fruit (fruit), a log frame with a net and fish (fish), soot and glowing embers (fire), handprints
+   (paint), ferns and steam (spring), a stone doorway and a wheel (wheel), big feathers (nest) */
+function caveFront(st, stat, live, anims, cx, y, zf, R, H, RIM) {
+  const zr = zf + 0.1, rn = mulberry32(((cx * 97) | 0) + 3), out = st.dir;   // props stand on the side away from the queue
+  const onRim = (a, k = 0.5) => [cx + Math.cos(a) * (R + RIM * k), y + Math.sin(a) * (H + RIM * k)];
+  if (st.kind === 'home') {
+    for (let k = 0; k <= 9; k++) { const [x, yy] = onRim(Math.PI * k / 9, 0.6), s = ball(0.13 + rn() * 0.06, mat(pick(rn, ['#A39A8C', '#8E8576', '#B5ADA0']), { roughness: 0.9 }), 7); s.scale.z = 0.7; s.position.set(x, yy, zr); stat.add(s); }
+    const roll = cyl(0.11, 0.11, H * 0.95, mat('#ffffff', { map: furTex('#B98B5E') }), 10); roll.position.set(cx + out * R * 0.9, y + H * 0.47, zr - 0.02); stat.add(roll);
+    for (const dy of [0.22, 0.72]) { const tie = cyl(0.125, 0.125, 0.05, mat('#6B4426'), 10); tie.position.set(roll.position.x, y + H * dy, zr - 0.02); stat.add(tie); }
+    const rug = new THREE.Mesh(new THREE.CircleGeometry(0.5, 18), mat('#C9A06A')); rug.rotation.x = -Math.PI / 2; rug.scale.set(1.3, 0.6, 1); rug.position.set(cx, y + 0.012, zf + 0.45); rug.receiveShadow = true; stat.add(rug);
+  } else if (st.kind === 'fruit') {
+    for (let k = 0; k <= 15; k++) { const [x, yy] = onRim(Math.PI * k / 15 + (rn() - 0.5) * 0.1, 0.7), lf = ball(0.15, mat(pick(rn, ['#5E9A3A', '#6EAE44', '#4E8A30'])), 6); lf.scale.set(1.4, 0.7, 0.5); lf.rotation.z = rn() * 3; lf.position.set(x, yy, zr + 0.03); stat.add(lf); }
+    for (let k = 0; k < 5; k++) {
+      const [x, yy] = onRim(0.45 + k * 0.56, 0.2), f = ball(0.08, mat(pick(rn, ['#E8413A', '#F2C12E', '#F07A1F']), { roughness: 0.5 }), 8); f.position.set(x, yy - 0.2, zr + 0.08); stat.add(f);
+      const stalk = cyl(0.01, 0.01, 0.16, mat('#4F6B2A'), 4); stalk.position.set(x, yy - 0.09, zr + 0.08); stat.add(stalk);
+    }
+  } else if (st.kind === 'fish') {
+    const logM = mat('#7A5638'), px = R + RIM + 0.1, top = H + RIM + 0.15;
+    for (const sx of [-1, 1]) { const p = cyl(0.08, 0.09, top + 0.1, logM, 8); p.position.set(cx + sx * px, y + (top + 0.1) / 2, zr + 0.05); stat.add(p); }
+    const lintel = cyl(0.08, 0.08, px * 2 + 0.4, logM, 8); lintel.rotation.z = Math.PI / 2; lintel.position.set(cx, y + top + 0.1, zr + 0.05); stat.add(lintel);
+    const net = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 1.3), mat('#ffffff', { map: netTex(), alphaTest: 0.3, side: THREE.DoubleSide })); net.position.set(cx + out * (px - 0.25), y + top - 0.55, zr + 0.13); net.rotation.z = out * 0.12; stat.add(net);
+    for (let k = 0; k < 2; k++) {
+      const fx = cx - out * (0.25 + k * 0.4), str = cyl(0.008, 0.008, 0.3, mat('#D8C8A0'), 3); str.position.set(fx, y + top - 0.05, zr + 0.13); stat.add(str);
+      const f = fishMesh(pick(rn, ['#8FA9BF', '#D98A5A'])); f.rotation.z = Math.PI / 2; f.scale.setScalar(1.3); f.position.set(fx, y + top - 0.38, zr + 0.13); stat.add(f);
+    }
+  } else if (st.kind === 'fire') {
+    const soot = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: softDotTex(), color: '#1A120D', transparent: true, opacity: 0.6, depthWrite: false }));
+    soot.scale.set(R * 2.4, 1.4, 1); soot.position.set(cx, y + H + RIM + 0.15, zr - 0.04); stat.add(soot);   // blackened by smoke above the door
+    const glow = new THREE.Sprite(glowMat('#FF7A2A').clone()); glow.position.set(cx, y + 0.25, zf + 0.3); live.add(glow);
+    for (let k = 0; k < 6; k++) { const e = ball(0.05 + rn() * 0.04, mat('#3A2018', { emissive: '#FF5A1A', emissiveIntensity: 0.9 }), 6); e.position.set(cx + (rn() - 0.5) * 0.7, y + 0.03, zf + 0.25 + rn() * 0.3); stat.add(e); }
+    anims.push((t) => { const f = 0.8 + Math.sin(t * 11 + cx) * 0.12 + Math.sin(t * 27) * 0.08; glow.scale.setScalar(1.6 * f); glow.material.opacity = (0.35 + TOD.glow * 0.4) * f; });
+  } else if (st.kind === 'paint') {
+    for (let k = 0; k < 8; k++) {
+      const a = Math.PI * (k + 0.5) / 8, [x, yy] = onRim(a, 0.5), c = pick(rn, ['#C65A2E', '#E8A64C', '#5C7FA0', '#9C5BD6', '#2FB457']);
+      const hand = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.3), new THREE.MeshBasicMaterial({ map: handTex(), color: c, transparent: true, depthWrite: false }));
+      hand.position.set(x, yy, zr + 0.01); hand.rotation.z = a - Math.PI / 2 + (rn() - 0.5) * 0.5; stat.add(hand);
+    }
+  } else if (st.kind === 'spring') {
+    for (const sx of [-1, 1]) stat.add(fern(cx + sx * (R + RIM + 0.25), y, zr + 0.1, 0.55, rn));
+    const steamM = new THREE.SpriteMaterial({ map: softDotTex(), color: '#FFFFFF', transparent: true, depthWrite: false });
+    const puffs = Array.from({ length: 3 }, (_, k) => { const sp = new THREE.Sprite(steamM.clone()); live.add(sp); return { sp, k }; });
+    anims.push((t) => { for (const o of puffs) { const k = (t * 0.22 + o.k / 3) % 1; o.sp.position.set(cx + Math.sin(t * 0.8 + o.k * 2) * 0.3, y + H * 0.85 + k * 1.6, zr + 0.2); o.sp.scale.setScalar(0.5 + k * 0.9); o.sp.material.opacity = 0.45 * Math.sin(k * Math.PI); } });
+  } else if (st.kind === 'wheel') {
+    const stoneM = mat('#B0A89C', { map: rockUnitTex() });
+    const slab = shadowed(new THREE.Mesh(new THREE.BoxGeometry((R + RIM) * 2 + 0.5, 0.24, 0.36), stoneM)); slab.position.set(cx, y + H + RIM + 0.06, zr + 0.06); stat.add(slab);
+    for (const sx of [-1, 1]) { const post = shadowed(new THREE.Mesh(new THREE.BoxGeometry(0.24, H + RIM + 0.06, 0.3), stoneM)); post.position.set(cx + sx * (R + RIM * 0.5 + 0.08), y + (H + RIM) / 2, zr + 0.04); stat.add(post); }
+    const w = shadowed(cyl(0.36, 0.36, 0.12, mat('#9C948A'), 18)); w.rotation.set(Math.PI / 2 - 0.25, 0, 0); w.position.set(cx + out * (R + RIM + 0.6), y + 0.37, zr + 0.2); stat.add(w);
+    const hole = cyl(0.08, 0.08, 0.13, mat('#4A3A2E'), 8); hole.rotation.copy(w.rotation); hole.position.copy(w.position); stat.add(hole);
+  } else if (st.kind === 'nest') {
+    const featherGeo = (GEO.feather ||= new THREE.ConeGeometry(0.08, 0.6, 6).translate(0, 0.3, 0).scale(1, 1, 0.3));
+    for (let k = 0; k < 9; k++) {
+      const a = Math.PI * (k + 0.5) / 9, [x, yy] = onRim(a, 0.7);
+      const f = new THREE.Mesh(featherGeo, mat(pick(rn, ['#F2EAD6', '#E8703A', '#5C9FD6', '#F2C12E']))); f.position.set(x, yy, zr + 0.02); f.rotation.z = a - Math.PI / 2 + (rn() - 0.5) * 0.3; stat.add(f);
+    }
+    for (let k = 0; k < 6; k++) { const tw = cyl(0.02, 0.015, 0.7, mat('#6B4A2A'), 4); tw.position.set(cx + out * (R + 0.4) + (rn() - 0.5) * 0.4, y + 0.06, zr + 0.2 + rn() * 0.2); tw.rotation.set(Math.PI / 2, 0, rn() * 3); stat.add(tw); }
+  }
 }
 function firePit(stat, live, anims, x, z, y, s) {
   for (let k = 0; k < 8; k++) { const a = k / 8 * Math.PI * 2; const st = ball(0.07 * s, mat(k % 2 ? '#8E8576' : '#A39A8C'), 6); st.scale.y = 0.7; st.position.set(x + Math.cos(a) * 0.22 * s, y + 0.04, z + Math.sin(a) * 0.16 * s); stat.add(st); }
@@ -1576,8 +1812,8 @@ const ANIMALS = {
       for (const m of [big, small]) { m.g.scale.x = dir * m.s; m.trunk.rotation.z = Math.sin(t * 1.5 + m.s) * 0.15; m.legs.forEach((l, k) => (l.rotation.z = Math.sin(t * 2.4 + k * Math.PI / 2) * 0.2)); }
     });
   },
-  ptero(grp, L, anims, r, wallTop) { flyers(grp, L, anims, wallTop, 2, 1.4, '#C88A6C', -7, 2.2); },
-  birds(grp, L, anims, r, wallTop) { flyers(grp, L, anims, wallTop, 5, 0.3, '#3A3A44', -16, 3.4, true); },
+  ptero(grp, L, anims, r, wallTop, sky) { flyers(grp, L, anims, sky, 2, 1.4, '#C88A6C', -7, 2.2); },
+  birds(grp, L, anims, r, wallTop, sky) { flyers(grp, L, anims, sky, 5, 0.3, '#3A3A44', -16, 3.4, true); },
 };
 function groundSpan(L) {   // the widest stretch of open ground between rock steps
   const edges = [0, ...L.blocks.flatMap(([a, b]) => [a, b]), L.w].sort((a, b) => a - b);
@@ -1589,7 +1825,7 @@ function groundSpan(L) {   // the widest stretch of open ground between rock ste
   }
   return best && best[1] - best[0] > 3 ? best : null;
 }
-function flyers(grp, L, anims, wallTop, n, size, color, z, speed, flock) {
+function flyers(grp, L, anims, sky, n, size, color, z, speed, flock) {   // sky(x): the top of the rocks below, to keep clear of
   const list = [];
   for (let k = 0; k < n; k++) { const f = flock ? buildFlyer(color, false) : buildPtero(color); f.g.scale.setScalar(size); grp.add(f.g); list.push(f); }
   const x0 = -16, x1 = L.w + 16;
@@ -1598,7 +1834,7 @@ function flyers(grp, L, anims, wallTop, n, size, color, z, speed, flock) {
       const lap = (x1 - x0) / speed + (flock ? 10 : 7), tt = (t + (flock ? 0 : k * lap / n)) % lap, dir = Math.floor((t + k * 3) / lap) % 2 ? -1 : 1;
       const x = dir > 0 ? x0 + tt * speed : x1 - tt * speed;
       const ox = flock ? (k % 3) * -1.1 : 0, oy = flock ? ((k * 7) % 5) * 0.4 : 0;
-      f.g.position.set(x + ox * dir, wallTop + 3 + oy + Math.sin(t * 0.7 + k) * 1.2 + (flock ? 6 : 0), z);
+      f.g.position.set(x + ox * dir, sky(x + ox * dir) + 2.4 + size * 0.6 + oy + Math.sin(t * 0.7 + k) * 0.6 + (flock ? 5 : 0), z);
       f.g.rotation.set(f.flap ? (dir > 0 ? 0.4 : -0.4) : 0, dir > 0 ? -0.55 : Math.PI + 0.55, 0);
       if (f.flap) f.flap(t + k * 1.7, 5);
       else { const flap = Math.sin(t * 12 + k); f.wings[0].rotation.x = -0.25 + flap * 0.6; f.wings[1].rotation.x = 0.25 - flap * 0.6; }
@@ -2275,7 +2511,7 @@ function stepPeople(dt) {
       if (landedAt !== p.from) { p.state = 'wait'; continue; }
       const side = Math.sign(p.x - c.x) || s.dir;               // the copter's nearer side
       if (walkTo(p, c.x + side * (copterHX + HOP_GAP), 0.4, dt, WALK_SPEED * 1.4)) {
-        p.state = 'ride'; p.seat = seatsUsed(); c.riders.push(p);
+        p.state = 'ride'; p.seat = seatsUsed(); c.riders.push(p); p.jump = 0.35;   // a hop up into the seat
         p.fig.group.removeFromParent(); c.vis.inner.add(p.fig.group);
         sfx('chirp'); Haptics.buzz('tap');
         const to = G.stops[p.to]; voice(['n' + to.num, 'name-' + to.kind], 2);   // "Three! Fishing!"
@@ -3143,23 +3379,86 @@ function syncCopter(dt) {
     whirr.f.frequency.setTargetAtTime(300 + c.pedal * 260, AC.currentTime, 0.1);
   }
 }
+/* ======== people: poses ======== */
+// Every frame each person gets a pose from what they're doing and how they feel. Walking they turn towards where they're
+// going and swing their arms and legs: running to the copter with arms out, skipping home, stomping off when fed up.
+// Waiting happily they look around, stretch, hum, point the way they want to go, hop and scratch their heads; then they
+// tap a foot with hands on hips, cross their arms and shake their heads, and at the end jump up and down shaking their
+// fists. When the copter comes close everyone waves both arms and bounces. Riders hold the rails and look about, throw
+// their arms up when it goes fast, point at their stop when it's near and grab their heads when it bumps. Delivered,
+// they jump and spin round with their arms up, and wave goodbye at their cave door.
+const IDLE_ACTS = ['look', 'stretch', 'hum', 'point', 'hop', 'scratch'];   // what a happy waiting person does, a few s each
+const IDLE_ACT_TIME = 3.2;
+function posePerson(p) {   // sets the limbs, returns how far to turn towards where they look (radians, 0 = at us)
+  const f = p.fig, c = G.copter, t = G.t, ph = p.id * 1.731, kid = p.size < 0.9, granny = p.special === 'grandma';
+  let legL = 0, legR = 0, liftL = 0, liftR = 0, upL = 0.25, upR = 0.25, fwdL = 0, fwdR = 0, lean = 0, tip = granny ? 0.12 : 0, squash = 1, turn = 0, bob = 0, face = p.stage;
+  const wave = (k, a = 2.5) => a + Math.sin(t * 12 + ph + k * Math.PI) * 0.35;
+  if (p.walking && p.state !== 'ride') {
+    const run = p.state === 'board', skip = p.state === 'home', cross = p.state === 'leave';
+    const w = p.walk * (run ? 14 : cross ? 7 : skip ? 11 : 10), sw = Math.sin(w);
+    turn = p.face * 0.85;
+    legL = -sw * (cross ? 0.45 : 0.7); legR = sw * (cross ? 0.45 : 0.7);
+    fwdL = sw * 0.6; fwdR = -sw * 0.6; bob = Math.abs(Math.sin(w)) * 0.06; tip += 0.08;
+    if (run) { fwdL = fwdR = -0.9 + sw * 0.2; tip += 0.12; bob = Math.abs(sw) * 0.09; }
+    if (skip) { bob = Math.abs(Math.sin(w * 0.5)) * 0.22; fwdL = sw * 1.1; fwdR = -sw * 1.1; upL = upR = 0.45; face = 0; }
+    if (cross) { tip += 0.2; fwdL = fwdR = 0.4; squash = 1 - 0.06 * Math.max(0, -Math.cos(w)); face = 3; }
+  } else if (p.state === 'cheer') {
+    const k = p.timer / CELEBRATE_TIME;
+    upL = wave(0, 2.7); upR = wave(1, 2.7); turn = k * Math.PI * 2; squash = 1 + Math.sin(p.timer * 18) * 0.05; face = 0;
+  } else if (p.state === 'vanish' || p.state === 'home') {
+    upR = wave(0, 2.4); face = 0;                              // bye-bye at the door
+  } else if (p.state === 'ride') {
+    const to = G.stops[p.to], speed = Math.hypot(c.vx, c.vy), near = !c.landed && Math.abs(to.x - c.x) < 5;
+    upL = upR = 0.75; fwdL = fwdR = 0.15; turn = Math.sin(t * 0.5 + ph) * 0.45;   // holding the rails, looking about
+    if (kid) bob = Math.abs(Math.sin(t * 6 + ph)) * 0.05;
+    if (p.jump > 0 || c.dizzy > 0) { upL = upR = 2.7; fwdL = fwdR = -0.6; squash = 0.92; face = 'dizzy'; }   // whoa!
+    else if (near) { turn = Math.sign(to.x - c.x) * 0.6; upR = 1.4; fwdR = -1.3; bob = Math.abs(Math.sin(t * 8 + ph)) * 0.05; face = 0; }   // that's mine!
+    else if (speed > FLY_SPEED * 0.75 || G.boostT > 0) { upL = wave(0, 2.6); upR = wave(1, 2.6); tip = -0.15; face = 0; }   // wheee
+    else if (p.stage >= 2) { upL = upR = -0.5; fwdL = fwdR = -1.25; turn = 0; }   // arms crossed
+  } else if (p.state === 'wait' || p.state === 'board') {
+    const coming = !c.landed && Math.abs(c.x - p.x) < 6 && Math.abs(c.y - p.y) < 6, here = c.landed && c.landed.stop === p.from;
+    if (p.stage <= 2 && (coming || here)) {                   // over here! me next!
+      upL = wave(0); upR = wave(1); bob = Math.abs(Math.sin(t * 8 + ph)) * (kid ? 0.2 : 0.12); turn = Math.sign(c.x - p.x) * 0.3; face = Math.min(p.stage, 1);
+    } else if (p.stage === 0) {
+      const at = (t + ph * 3) / IDLE_ACT_TIME, act = IDLE_ACTS[(Math.floor(at) + p.id) % IDLE_ACTS.length], u = at % 1, s1 = Math.sin(u * Math.PI);
+      if (act === 'look') { turn = Math.sin(u * Math.PI * 2) * 0.7; upR = 1.7; fwdR = -1.2; }        // shading the eyes, looking for the copter
+      else if (act === 'stretch') { upL = upR = 0.25 + 2.7 * s1; squash = 1 + 0.06 * s1; tip -= 0.1 * s1; }
+      else if (act === 'hum') { lean = Math.sin(t * 3 + ph) * 0.1; fwdL = fwdR = 0.55; bob = Math.abs(Math.sin(t * 3 + ph)) * 0.02; }
+      else if (act === 'point') { turn = Math.sign(G.stops[p.to].x - p.x) * 0.6; fwdR = -1.5; bob = Math.abs(Math.sin(t * 5)) * 0.03; }
+      else if (act === 'hop') { bob = Math.abs(Math.sin(t * 7 + ph)) * (kid ? 0.25 : 0.12); upL = upR = 0.9; }
+      else { upR = 2.6; fwdR = -0.3 + Math.sin(t * 16) * 0.15; lean = 0.06; }                       // scratching the head
+    } else if (p.stage === 1) {                               // hands on hips, tapping a foot
+      upL = upR = 0.75; fwdL = fwdR = 0.35; legR = -0.25 * Math.max(0, Math.sin(t * 9 + ph)); liftR = 0.03 * Math.max(0, Math.sin(t * 9 + ph));
+      turn = clamp((c.x - p.x) * 0.1, -0.6, 0.6);
+    } else if (p.stage === 2) {                               // arms crossed, sighing, shaking the head
+      upL = upR = -0.5; fwdL = fwdR = -1.25; legR = -0.3 * Math.max(0, Math.sin(t * 12 + ph));
+      turn = Math.sin(t * 0.9 + ph) > 0.6 ? Math.sin(t * 9) * 0.3 : clamp((c.x - p.x) * 0.1, -0.5, 0.5);
+      squash = 1 - 0.04 * Math.max(0, Math.sin(t * 1.3 + ph));
+    } else {                                                  // hopping mad
+      bob = Math.abs(Math.sin(t * 9 + ph)) * 0.18; upL = 2.6 + Math.sin(t * 20 + ph) * 0.3; upR = 2.6 + Math.sin(t * 20 + ph + 1) * 0.3;
+      fwdL = fwdR = -0.4; lean = Math.sin(t * 20) * 0.05;
+    }
+  }
+  if (granny) upR = Math.max(upR, 0.45);                      // she keeps hold of her stick (and waves it)
+  f.legs[0].rotation.x = legL; f.legs[1].rotation.x = legR;
+  f.legs[0].position.y = 0.32 + liftL; f.legs[1].position.y = 0.32 + liftR;
+  f.arms[0].rotation.set(fwdL, 0, -upL); f.arms[1].rotation.set(fwdR, 0, upR);
+  f.body.rotation.set(tip, 0, lean); f.body.position.y = bob; f.body.scale.y = squash;
+  f.face.material = faceMats[face];
+  return turn;
+}
 function syncPeople() {
   for (const p of G.people) {
     const f = p.fig, g = f.group;
     const jump = p.state === 'cheer' ? Math.abs(Math.sin(p.timer * 9)) * 0.45 : p.jump > 0 ? Math.sin(p.jump / 0.35 * Math.PI) * 0.25 : 0;
+    const turn = posePerson(p);
     if (p.state === 'ride') {
       g.position.set(p.seats > 1 ? (seatX(p.seat) + seatX(p.seat + 1)) / 2 : seatX(p.seat), 0.42 + jump, 0); g.scale.setScalar(0.9 * p.size);
-      g.rotation.y = -G.copter.yaw;   // riders face us whichever way the copter points
+      g.rotation.y = -G.copter.yaw + turn;   // riders face us whichever way the copter points (and look about)
     } else {
-      const bob = p.walking ? Math.abs(Math.sin(p.walk * 10)) * (p.state === 'leave' ? 0.1 : 0.06) : 0;
-      g.position.set(p.x, p.y + bob + jump, p.z); g.scale.setScalar(Math.max(0.001, p.scale * p.size)); g.rotation.y = 0;
+      g.position.set(p.x, p.y + jump, p.z); g.scale.setScalar(Math.max(0.001, p.scale * p.size)); g.rotation.y = turn;
       f.body.scale.x = p.face < 0 ? -1 : 1;
     }
-    const stride = p.walking ? Math.sin(p.walk * 10) * 0.07 : 0;
-    f.legs[0].position.y = 0.32 + Math.max(0, stride); f.legs[1].position.y = 0.32 + Math.max(0, -stride);
-    const armUp = p.state === 'cheer' ? 2.6 : (p.state === 'wait' && !p.walking && p.stage === 0 && Math.sin(G.t * 2 + p.id) > 0.6) ? 2.4 : 0;
-    f.arms[0].rotation.z = -0.25 - armUp; f.arms[1].rotation.z = 0.25 + (p.state === 'cheer' ? 2.6 : 0);
-    f.face.material = faceMats[p.state === 'cheer' || p.state === 'home' ? 0 : p.stage];
     const showBubble = p.state === 'wait' || p.state === 'board' || p.state === 'ride';
     f.bubble.visible = showBubble;
     if (showBubble) {
