@@ -5,6 +5,12 @@ release prep). Still to do from milestone 5: a playtest on a real phone through 
 an older phone). Milestone 6 done 2026-10-24: public repo tb-x/pedal-copter, live at https://tb-x.github.io/pedal-copter/ and on
 the landing page. Recorded sound (voices, effects, music) is in, see `SOUND-PLAN.md`.
 
+Changed after publishing (2026-10-26, at the user's request):
+- No landing stones: a stop is its whole ledge; land anywhere on it and people walk over to the copter.
+- Random power-ups to catch: feather (faster), log (one more seat), steak (food), flower (patience).
+- A mountainside instead of a cut-through: natural rock with moss and plants, boulders, a meadow in front.
+- Palms with one smooth curved, ringed trunk and arching feathery fronds.
+
 Built differently from this plan (milestone 3):
 - Levels 6 and 7 have four stops, not five (the rock steps and caves need the room).
 - An empty food meter doesn't stop the copter climbing: it climbs and flies slowly instead, so nobody can get stuck

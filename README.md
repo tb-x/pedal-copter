@@ -1,7 +1,7 @@
 # Pedal-Copter
 
 A sky-taxi game for young kids, inspired by the old game Ugh!. A caveman pedals a wooden helicopter with a rotor
-of big leaves around a stone-age valley. Cave people come out of their caves, wait on the landing stones and show
+of big leaves around a stone-age valley. Cave people come out of their caves, wait on their ledges and show
 a bubble with the stop they want (its colour, a little picture and a big number). Pick them up and fly them there.
 
 It has twelve levels and two ways to fly, and works offline from the Home Screen. Everything is drawn in code (no
@@ -14,8 +14,9 @@ made in the browser.
 
 ## What you see
 
-The valley is drawn like a museum diorama, with the front of the rock cut away to show its layers (sandstone,
-limestone, little fossil shells). Everything is built in code; there are no picture files.
+The valley is a rocky mountainside: cliffs of weathered rock with moss, lichen, rain streaks and plants growing in
+the cracks, boulders at their feet, and a meadow of grass and flowers in front. Everything is built in code; there are
+no picture files.
 
 - **Caves** are rooms cut open at the front, each with ochre paintings on the walls (mammoths and hunters, fruit
   trees, fish, flames) and someone at home: a cave person stirring a pot by the fire with a baby asleep on a fur bed
@@ -24,7 +25,7 @@ limestone, little fossil shells). Everything is built in code; there are no pict
   Later stops add a painting cave (a kid painting the wall, pots of paint), a hot spring (someone soaking in a
   steaming pool), a wheel workshop (stone wheels and a worker with a hammer) and a dino nest (spotted eggs, one
   wobbling, and a kid watching it).
-- **Stops** have a round landing stone with a ring in their colour, a carved plaque with their number and picture,
+- **Stops** are whole ledges: a carved plaque shows their number and picture,
   and a torch.
 - **The copter** is a woven basket with a rounded bow on curled log skids, rails lashed with vines, a stone pedal
   wheel in the bow with pedals on both sides, a vine belt up to the mast, a rotor of four big leaves right above the
@@ -49,8 +50,9 @@ limestone, little fossil shells). Everything is built in code; there are no pict
 
 ## How it plays
 
-- People walk out of a cave and wait beside a landing stone, with a bubble showing where they want to go.
-- Land on their stone and they hop in by themselves. Land on the stop in their bubble and they hop out, cheer and go
+- People walk out of a cave and wait on their ledge, with a bubble showing where they want to go.
+- Land anywhere on their ledge and they walk over and hop in by themselves. Land anywhere on the ledge in their
+  bubble and they hop out beside the copter, cheer and go
   into that cave.
 - The lamps on the copter show which seats are taken. When it's full, the lamps flash and the next person waits.
 - Bumping into rock just bounces the copter back (the pilot's eyes spin). Dipping into the lake splashes it back up.
@@ -83,12 +85,26 @@ limestone, little fossil shells). Everything is built in code; there are no pict
 - **Pterodactyls** (levels 6–8, 12) fly across high up. Bumping one is never a crash: the copter is nudged aside,
   the pilot's eyes spin and the pterodactyl squawks and flaps away.
 
+## Power-ups
+
+From level 2 on, a power-up floats up near the copter every 16–26 seconds, bobbing in a glowing bubble. Fly through it
+to catch it (its picture pops up over the pilot); if nobody catches it, it blinks and pops after 14 seconds.
+
+- 🪶 **Feather**: the copter flies half as fast again for 15 seconds (a meter shows the time left, and it leaves a
+  little trail).
+- 🪵 **Log**: one more seat for the rest of the level, up to four (the copter grows a seat and a lamp).
+- 🍖 **Steak**: a full food meter (only on hunger levels, when it's not full).
+- 🌼 **Flower**: everyone waiting or riding cheers up (half their waiting is forgiven).
+
+Tuning: `POWERUP_FROM`, `POWERUP_EVERY`, `POWERUP_LIFE`, `POWERUP_R` (how close counts), `BOOST_TIME`, `BOOST`,
+`SEATS_MAX`, `CALM_SHARE`.
+
 ## Controls
 
 Pick the way to fly on the level map (the two buttons at the bottom):
 
 - 👆 **Follow my finger** (default): touch and hold anywhere and the copter flies towards your finger. Let go and it
-  slowly comes down. Coming down near a landing stone settles it onto the stone.
+  slowly comes down and lands wherever it touches down.
 - 🕹️ **Pedal and steer**: hold the big foot button to pedal (climb), ◀ ▶ to fly sideways. Let go of the foot and the
   copter sinks.
 - On levels 1 and 2, a short tap on a stop flies the copter there by itself.
@@ -145,7 +161,7 @@ All at the top of the script in `index.html`:
 | `SINK_SPEED`, `SINK_ACCEL` | 1.3, 2.5 | let go: how fast it comes down, and how quickly it gets to that speed |
 | `SIDE_DRAG` | 3.5 | let go: how fast sideways drifting stops |
 | `PAD_LIFT`, `PAD_GRAVITY`, `PAD_FALL_MAX` | 10, 4, 2.6 | pedal-and-steer: climb, sink and the fastest fall |
-| `LAND_SNAP`, `SNAP_PULL` | 1.4, 3 | landing help: how far from a stone it still settles on it, and how hard it's pulled over it |
+| `HOP_GAP` | 0.25 | people hop in and out this far beside the copter |
 | `BUMP_BOUNCE` | 0.45 | how much speed it keeps when it boings off rock |
 | `SKY_EXTRA` | 9 | how far above the level's picture the copter can climb (the camera follows) |
 | `CLIMB_HELP_BELOW` | 0.6 | follow-my-finger: a finger this far below a ledge's top (or higher) makes the copter climb over it first |
@@ -161,8 +177,8 @@ All at the top of the script in `index.html`:
 | `BANK_PER_TURN`, `BANK_MAX` | 0.045, 0.28 | leaning into a turn |
 | `MOOD_T`, `RIDE_PATIENCE_RATE` | as Going Up! | when faces turn grumpy, and how much slower patience runs out in the copter |
 | `QUEUE_MAX` | 3 | people waiting at one stop at most |
-| `QUEUE_START`, `QUEUE_GAP` | 1.9, 0.6 | where the first person waits beside the stone, and the gap to the next |
-| `CAVE_DX` | 3.3 | how far a stop's cave room sits from its stone |
+| `QUEUE_START`, `QUEUE_GAP` | 1.9, 0.6 | where the first person waits from the stop's plaque, and the gap to the next |
+| `CAVE_DX` | 3.3 | how far a stop's cave room sits from its plaque |
 | `WALK_SPEED` | 1.5 | how fast people walk (grandmas half that) |
 | `BOARD_GAP` | 0.35 s | gap between two people hopping in or out |
 | `MAX_PEOPLE` | 8 | people in the valley at most |

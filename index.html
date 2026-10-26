@@ -60,6 +60,9 @@
   #foodFill{height:100%;width:calc(var(--f,1) * 100%);background:#E8873A;border-radius:7px}
   #food.low{animation:pulse .7s ease-in-out infinite}
   #food.low #foodFill{background:#FF5A4A}
+  #boost{display:flex;align-items:center;gap:3px;padding:2px 8px;border-radius:14px;background:rgba(255,255,255,.75);font-size:18px;line-height:24px}
+  #boostBar{width:44px;height:14px;border-radius:7px;background:#DCEAF2;overflow:hidden;box-shadow:inset 0 0 0 2px #fff}
+  #boostFill{height:100%;width:calc(var(--f,1) * 100%);background:#4FB3E8;border-radius:7px}
   #gone{display:flex;align-items:center;gap:2px;padding:2px 8px;border-radius:14px;background:rgba(255,255,255,.75);
     font:bold 15px/24px var(--digits);white-space:nowrap}
   #gone.bump{animation:pop .4s ease-out}
@@ -159,6 +162,7 @@
   <div id="progIcons"></div>
   <div id="progBar" hidden><div id="progFill"></div><span id="progText">0/5</span></div>
   <div id="food" hidden><span>🍗</span><div id="foodBar"><div id="foodFill"></div></div></div>
+  <div id="boost" hidden><span>🪶</span><div id="boostBar"><div id="boostFill"></div></div></div>
   <div id="gone" hidden><span>🚶</span><span id="goneN">0</span></div>
 </div>
 <div id="hudR">
@@ -215,14 +219,19 @@ const PAD_LIFT = 10;              // pedal pads: climb acceleration while pedall
 const PAD_GRAVITY = 4;            // pedal pads: pull down when not pedalling (units/s²)
 const PAD_FALL_MAX = 2.6;         // pedal pads: never falls faster than this (units/s)
 const CLIMB_HELP_BELOW = 0.6;     // follow-the-finger: a finger this far below a rock step's top (or higher) climbs over it
-const LAND_SNAP = 1.4;            // coming down within this sideways distance of a landing stone settles onto it
-const SNAP_PULL = 3;              // how strongly a descending copter is pulled over a nearby stone
 const TAKEOFF_HOP = 1.6;          // upward speed when lifting off (units/s)
 const BUMP_BOUNCE = 0.45;         // share of speed kept when boinging off rock
 const BUMP_MIN = 0.8;             // slower than this into rock and it just stops, no boing
 const SPLASH_UP = 4.5;            // dipping into the lake bounces the copter up this fast
 const DIZZY_TIME = 1.2;           // s the pilot's eyes spin after a bump
 const COPTER_HX = 1.35, COPTER_H = 2.1;   // copter collision box: half width, height above the skids (rotor included)
+const POWERUP_FROM = 2;           // power-ups float up from this level on
+const POWERUP_EVERY = [16, 26];   // s between two power-ups appearing (one at a time)
+const POWERUP_LIFE = 14;          // s a power-up floats before it pops by itself (it blinks for its last 3 s)
+const POWERUP_R = 0.9;            // how close the copter has to fly to catch one
+const BOOST_TIME = 15, BOOST = 1.5;   // feather: this many seconds this much faster
+const SEATS_MAX = 4;              // log: an extra seat for the rest of the level, up to this many seats
+const CALM_SHARE = 0.5;           // flower: everyone waiting gets this share of their waiting forgiven
 const SKY_EXTRA = 9;               // the copter can climb this far above the top of the level's view; the camera follows it up
 const TURN_SPEED = 0.8;           // the copter turns round once it flies this fast the other way (units/s)
 const TURN_SPRING = 34, TURN_DAMP = 11;   // how quickly it swings round, and how softly it settles
@@ -245,8 +254,9 @@ const MAX_VIEW_W = 32;            // the camera shows at most this much of a wid
 const MOOD_T = [0.35, 0.6, 0.8, 1.0];  // wait/patience thresholds: happy, ok, grumpy, angry, then they walk home
 const RIDE_PATIENCE_RATE = 0.3;   // patience runs out this much slower in the copter (and nobody leaves from it)
 const QUEUE_MAX = 3;              // people waiting at one stop at most
-const QUEUE_START = 1.9, QUEUE_GAP = 0.6;  // first waiting place this far from the stone's centre, then this far apart
-const CAVE_DX = 3.3;              // cave room's centre this far from the stone's centre (on the queue side)
+const QUEUE_START = 1.9, QUEUE_GAP = 0.6;  // first waiting place this far from the stop's sign, then this far apart
+const CAVE_DX = 3.3;              // cave room's centre this far from the stop's sign (on the queue side)
+const HOP_GAP = 0.25;             // people hop in and out this far beside the copter's side
 const WALK_SPEED = 1.5;           // people walking (units/s)
 const BOARD_GAP = 0.35;           // gap between two people hopping in or out (s)
 const MAX_PEOPLE = 8;             // people in the valley at most
@@ -273,12 +283,13 @@ const BUBBLE_PX = 66;             // target on-screen size of a bubble (px)
 
 /* ======== levels ======== */
 // blocks: [x0, x1, top] rock steps standing on the ground (y 0). stops: on = block index, or -1 for the ground;
-// dir = which side of the stone the queue and the cave are (+1 right, -1 left). start = copter's x, landed on the ground.
+// x = where the stop's sign stands; dir = which side of it the queue and the cave are (+1 right, -1 left). The stop's
+// landing area is its whole ledge (split halfway when two stops share one). start = copter's x, landed there.
 // time: 'day' | 'dusk' | 'night' | 'rain' | 'snow'. decor: animals in the background (trex, bronto, mammoths, ptero, birds).
 // lake / waterfall: [x0, x1]. sleeper: [x0, x1] a sleeping long-neck you can land on. wind: strength. hunger: the food
 // meter. pteros: pterodactyls flying through at once. rings: volcano smoke rings to fly through. torchWait: night torches
 // only burn where someone waits. specials: 'grandma', 'hunter'. rush: a group all wanting one kind of stop, every few s.
-// feast: share of trips to the campfire. Each stop needs its stone 1.75 clear of a taller neighbour on 3-4 seat levels.
+// feast: share of trips to the campfire. Keep each stop's sign 1.75 clear of a taller neighbour on 3-4 seat levels.
 const LEVELS = [
   { name: 'Two Caves', w: 20, h: 10, seats: 1, every: 7, patience: 60, target: 4,
     blocks: [[0, 6.5, 3.5], [13.5, 20, 5.5]],
@@ -421,29 +432,59 @@ function mixHex(a, b, k) {     // sRGB mix of two '#rrggbb' colours
   const ch = (s) => Math.round(((pa >> s) & 255) * (1 - k) + ((pb >> s) & 255) * k);
   return '#' + ((1 << 24) | (ch(16) << 16) | (ch(8) << 8) | ch(0)).toString(16).slice(1);
 }
-/* rock strata: one 4 x 4 unit tile, bands top to bottom with fossil dots (the diorama's cut edge) */
-function rockTex() {
-  return canvasTex('rock', 256, 256, (g) => {
-    const r = mulberry32(7);
-    const bands = [['#9B7653', 18], ['#C9A27A', 46], ['#B88E63', 30], ['#D8CCB4', 52], ['#A39A8C', 34], ['#C2AE8E', 40], ['#8F8273', 36]];
-    let y = 0;
-    for (const [c, h] of bands) {
-      g.fillStyle = c; g.fillRect(0, y, 256, h);
-      g.fillStyle = 'rgba(0,0,0,0.12)'; g.beginPath(); g.moveTo(0, y + h);   // wavy band edge
-      for (let x = 0; x <= 256; x += 16) g.lineTo(x, y + h - 2 + Math.sin(x * 0.05 + y) * 2.5);
-      g.lineTo(256, y + h + 3); g.lineTo(0, y + h + 3); g.fill();
-      y += h;
+/* rock: one 4 x 4 unit tile of a natural cliff face: chunky plates lit from the top left, cracks, moss and lichen, little
+   sprigs in the cracks. The same shapes in grey make the bump map, so the plates catch the light. Tiles without seams. */
+function drawRock(g, bump) {
+  const r = mulberry32(7), S = 512;
+  const wrap = (fn) => { for (const ox of [-S, 0, S]) for (const oy of [-S, 0, S]) { g.save(); g.translate(ox, oy); fn(); g.restore(); } };
+  g.fillStyle = bump ? '#5A5A5A' : '#8C7F70'; g.fillRect(0, 0, S, S);
+  const plates = [];
+  for (let k = 0; k < 34; k++) {
+    const cx = r() * S, cy = r() * S, rad = 50 + r() * 80, n = 5 + Math.floor(r() * 3), rot = r() * 6, pts = [];
+    for (let i = 0; i < n; i++) { const a = rot + i / n * Math.PI * 2, q = rad * (0.7 + r() * 0.45); pts.push([cx + Math.cos(a) * q, cy + Math.sin(a) * q * 0.8]); }
+    plates.push({ pts, shade: r(), cx, cy, rad, edges: pts.map(() => r() < 0.45) });   // only some edges crack: a rock face, not a wall
+  }
+  const path = (pts) => { g.beginPath(); pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); g.closePath(); };
+  for (const pl of plates) wrap(() => {
+    path(pl.pts);
+    if (bump) {
+      const gr = g.createRadialGradient(pl.cx - pl.rad * 0.3, pl.cy - pl.rad * 0.3, 2, pl.cx, pl.cy, pl.rad * 1.1);
+      gr.addColorStop(0, '#E0E0E0'); gr.addColorStop(1, '#707070'); g.fillStyle = gr; g.fill();
+    } else {
+      g.fillStyle = mixHex(mixHex('#A4968A', '#7E7264', pl.shade), '#9A8670', 0.25); g.fill();
+      g.strokeStyle = 'rgba(255,245,225,0.18)'; g.lineWidth = 3; g.beginPath();      // lit top-left edges
+      pl.pts.forEach(([x, y], i) => { if (i < pl.pts.length / 2) (i ? g.lineTo(x, y) : g.moveTo(x, y)); }); g.stroke();
     }
-    for (let k = 0; k < 3000; k++) { g.fillStyle = r() < 0.5 ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.07)'; g.fillRect(r() * 256, r() * 256, 2, 2); }
-    for (let k = 0; k < 9; k++) {                                // ammonites
-      const x = r() * 256, yy = r() * 256, s = 4 + r() * 5;
-      g.strokeStyle = 'rgba(70,55,40,0.45)'; g.lineWidth = 1.5; g.beginPath();
-      for (let a = 0; a < 12; a += 0.3) g.lineTo(x + Math.cos(a) * a * s / 12, yy + Math.sin(a) * a * s / 12);
-      g.stroke();
-    }
-    for (let k = 0; k < 40; k++) { g.fillStyle = r() < 0.5 ? '#7E7468' : '#E2D8C6'; g.beginPath(); g.ellipse(r() * 256, r() * 256, 2 + r() * 3, 1.5 + r() * 2, r() * 3, 0, 7); g.fill(); }
-  }, true);
+    g.strokeStyle = bump ? 'rgba(0,0,0,0.7)' : 'rgba(40,30,22,0.5)'; g.lineWidth = bump ? 4 : 2.5;   // cracks along some of the plate's edges
+    pl.pts.forEach(([x, y], i) => { if (!pl.edges[i]) return; const [x2, y2] = pl.pts[(i + 1) % pl.pts.length]; g.beginPath(); g.moveTo(x, y); g.lineTo(x2, y2); g.stroke(); });
+  });
+  for (let k = 0; k < 14; k++) {                                   // long cracks running down the face
+    let x = r() * S, y = r() * S; const pts = [[x, y]];
+    for (let i = 0; i < 7; i++) { x += (r() - 0.5) * 30; y += 14 + r() * 22; pts.push([x, y]); }
+    wrap(() => { g.strokeStyle = bump ? 'rgba(0,0,0,0.8)' : 'rgba(30,22,16,0.6)'; g.lineWidth = bump ? 3 : 2; g.beginPath(); pts.forEach(([px, py], i) => (i ? g.lineTo(px, py) : g.moveTo(px, py))); g.stroke(); });
+  }
+  if (bump) return;
+  for (let k = 0; k < 22; k++) {                                   // dark streaks where rain runs down
+    const x = r() * S, y = r() * S, w = 6 + r() * 14, h = 90 + r() * 160;
+    wrap(() => { const gr = g.createLinearGradient(0, y, 0, y + h); gr.addColorStop(0, 'rgba(50,42,34,0.22)'); gr.addColorStop(1, 'rgba(50,42,34,0)'); g.fillStyle = gr; g.fillRect(x, y, w, h); });
+  }
+  for (let k = 0; k < 4000; k++) { g.fillStyle = r() < 0.5 ? 'rgba(0,0,0,0.07)' : 'rgba(255,255,255,0.06)'; g.fillRect(r() * S, r() * S, 2, 2); }
+  for (let k = 0; k < 16; k++) {                                   // moss and lichen
+    const x = r() * S, y = r() * S, rad = 14 + r() * 34, green = r() < 0.75;
+    wrap(() => {
+      const gr = g.createRadialGradient(x, y, 1, x, y, rad);
+      gr.addColorStop(0, green ? 'rgba(96,128,52,0.75)' : 'rgba(196,186,120,0.55)'); gr.addColorStop(1, 'rgba(96,128,52,0)');
+      g.fillStyle = gr; g.beginPath(); g.ellipse(x, y, rad * 1.4, rad, 0, 0, 7); g.fill();
+    });
+    for (let i = 0; i < 40; i++) { g.fillStyle = green ? 'rgba(70,104,40,0.6)' : 'rgba(170,160,100,0.5)'; g.fillRect(x + (r() - 0.5) * rad * 2, y + (r() - 0.5) * rad * 1.4, 2, 2); }
+  }
+  for (let k = 0; k < 30; k++) {                                   // sprigs of grass in the cracks
+    const pl = pick(r, plates), [x, y] = pick(r, pl.pts);
+    wrap(() => { g.strokeStyle = pick(r, ['#5E8C38', '#6E9A3E', '#4E7A30']); g.lineWidth = 2; for (let i = 0; i < 4; i++) { g.beginPath(); g.moveTo(x, y); g.lineTo(x + (i - 1.5) * 4, y - 8 - r() * 8); g.stroke(); } });
+  }
 }
+function rockTex() { return canvasTex('rock', 512, 512, (g) => drawRock(g, false), true); }
+function rockBumpTex() { return canvasTex('rockBump', 512, 512, (g) => drawRock(g, true), true); }
 function grassTex() {
   return canvasTex('grass', 128, 128, (g) => {
     const r = mulberry32(11);
@@ -568,8 +609,8 @@ function leafTex() {      // a big leaf with a midrib and veins (rotor blades, p
     }
   });
 }
-function rockUnitTex() {  // the strata tile again, at one repeat per 4 units for shapes whose UVs are in world units
-  const t = canvasTex('rockU', 256, 256, (g) => g.drawImage(rockTex().image, 0, 0), true);
+function rockUnitTex() {  // the rock tile again, at one repeat per 4 units for shapes whose UVs are in world units
+  const t = canvasTex('rockU', 512, 512, (g) => g.drawImage(rockTex().image, 0, 0), true);
   t.repeat.set(0.25, 0.25);
   return t;
 }
@@ -683,7 +724,7 @@ function zzzTex() {
 /* ======== art: materials & shapes ======== */
 const matCache = new Map();
 function mat(color, opts = {}) {
-  const key = color + (opts.map ? opts.map.uuid : '') + JSON.stringify({ ...opts, map: undefined });
+  const key = color + (opts.map ? opts.map.uuid : '') + (opts.bumpMap ? opts.bumpMap.uuid : '') + JSON.stringify({ ...opts, map: undefined, bumpMap: undefined });
   let m = matCache.get(key);
   if (!m) { m = new THREE.MeshStandardMaterial({ color, roughness: 0.85, metalness: 0, ...opts }); matCache.set(key, m); }
   return m;
@@ -802,15 +843,17 @@ function applyTime(name) {
 }
 
 /* ======== art: world ======== */
-const Z_BACK = -3, Z_FRONT = 2, Z_GROUND_FRONT = 3;   // rock steps run z -3..2; the ground's cut edge is at z 3
+const Z_BACK = -3, Z_FRONT = 2, Z_GROUND_FRONT = 9;   // rock steps run z -3..2; the meadow in front runs out to z 9, below the view
 const CAVE = { R: 1.15, H: 1.75, D: 1.35, RIM: 0.22 };   // cave rooms: half width, height, depth, thickness of the cut edge
+const ROCK_TINTS = ['#EDE6DA', '#DDD4C6', '#F4EEE4', '#D2CABC'];   // boulders: light tints, so the rock texture keeps its own colour
 function surfaceAt(L, x) { let y = 0; for (const [a, b, top] of L.blocks) if (x >= a && x <= b) y = Math.max(y, top); return y; }
 function wallTopOf(L) { return Math.max(Math.max(0, ...L.blocks.map((b) => b[2])) + 3.7, L.h * 0.62); }
 function buildWorld(L, stops) {
   const grp = new THREE.Group(), stat = new THREE.Group(); grp.add(stat);
   const anims = grp.userData.anims = [];
   const r = mulberry32(L.w * 7 + L.blocks.length * 13);
-  const rockM = mat('#ffffff', { map: rockTex() }), grassM = mat('#ffffff', { map: TOD.snow ? snowTex() : grassTex() }), backM = mat(TOD.wall, { map: rockTex() });
+  const rockM = mat('#ffffff', { map: rockTex(), bumpMap: rockBumpTex(), bumpScale: 3, roughness: 0.95 }), grassM = mat('#ffffff', { map: TOD.snow ? snowTex() : grassTex() });
+  const backM = mat(TOD.wall, { map: rockTex(), bumpMap: rockBumpTex(), bumpScale: 3, roughness: 0.95 });
   const six = (top, side = rockM) => [side, side, top, side, side, side];
   const gx0 = -14, gx1 = L.w + 14, wallTop = wallTopOf(L);
   const segs = L.lake ? [[gx0, L.lake[0]], [L.lake[1], gx1]] : [[gx0, gx1]];
@@ -843,12 +886,12 @@ function buildWorld(L, stops) {
   }
   // grass tufts, flowers and pebbles (instanced)
   const tufts = [], flowers = [], pebbles = [];
-  const tuftOK = (x, y, z) => !stops.some((s) => Math.abs(s.y - y) < 0.05 && ((Math.abs(x - s.x) < 1.55 && z > -1.6 && z < 1.6) || (Math.abs(x - s.caveX) < CAVE.R + CAVE.RIM && z < Z_BACK + CAVE.D + 0.1)))
+  const tuftOK = (x, y, z) => !stops.some((s) => Math.abs(s.y - y) < 0.05 && Math.abs(x - s.caveX) < CAVE.R + CAVE.RIM && z < Z_BACK + CAVE.D + 0.1)
     && !(L.lake && y === 0 && x > L.lake[0] - 0.15 && x < L.lake[1] + 0.15);
   const surfaces = [...L.blocks.map(([a, b, top]) => [a + 0.1, b - 0.1, top, Z_FRONT - 0.05]), ...segs.map(([a, b]) => [Math.max(a, -1.5), Math.min(b, L.w + 1.5), 0, Z_GROUND_FRONT - 0.05])];
   for (const [a, b, y, zFront] of surfaces) {
-    for (let k = 0, n = Math.round((b - a) * 7); k < n; k++) {
-      const x = a + r() * (b - a), z = r() < 0.55 ? zFront - r() * 0.45 : Z_BACK + 0.15 + r() * (zFront - Z_BACK - 0.2);
+    for (let k = 0, n = Math.round((b - a) * (y === 0 ? 16 : 7)); k < n; k++) {
+      const x = a + r() * (b - a), z = y === 0 ? Z_BACK + 0.15 + r() * Math.min(9, zFront - Z_BACK - 0.2) : (r() < 0.55 ? zFront - r() * 0.45 : Z_BACK + 0.15 + r() * (zFront - Z_BACK - 0.2));
       if (y === 0 && surfaceAt(L, x) > 0) continue;
       if (!tuftOK(x, y, z)) continue;
       if (L.sleeper && y === 0 && x > L.sleeper[0] && x < L.sleeper[1] && z > -2) continue;
@@ -863,7 +906,29 @@ function buildWorld(L, stops) {
       pebbles.push({ x, y: y + 0.02, z, s: sh, sy: sh * 0.5, ry: r() * 6, c: pick(r, ['#9C9488', '#B5ADA0', '#857D72', '#C9C0B0']) });
     }
   }
-  scatter(grp, tuftGeo(), mat('#ffffff', { side: THREE.DoubleSide }), tufts);
+  const cliffTufts = [], boulders = [];
+  for (const [a, b, top] of L.blocks) {                        // a mountainside, not a cut: plants in the cracks of every rock face
+    for (let k = 0, n = Math.round((b - a) * top / 2.2); k < n; k++) {
+      const x = a + 0.2 + r() * (b - a - 0.4), y = 0.4 + r() * (top - 0.8);
+      cliffTufts.push({ x, y, z: Z_FRONT + 0.02, s: 0.8 + r() * 0.7, rx: 1.2, ry: r() * 0.5, c: pick(r, TOD.snow ? ['#C8D6DE', '#9DB08A'] : ['#6E9A3E', '#5E8C38', '#7FAE4A']) });
+    }
+    for (const ex of [a, b]) for (let y = 0.4 + r() * 0.6; y < top - 0.3; y += 0.8 + r() * 1.1) {   // outcrops on both corners
+      if (surfaceAt(L, ex + (ex === a ? -0.3 : 0.3)) >= y) continue;   // (hidden against a taller neighbour)
+      boulders.push({ x: ex + (ex === a ? 0.1 : -0.1), y, z: Z_FRONT - 0.35 - r() * 0.8, s: 1.1 + r() * 1.3, sy: 0.9 + r() * 0.6, ry: r() * 6, rx: r() * 2, c: pick(r, ROCK_TINTS) });
+    }
+    for (let x = a + 0.8 + r() * 2; x < b - 0.6; x += 2.4 + r() * 2.6)   // ...and a few bulging out of the face
+      boulders.push({ x, y: 0.6 + r() * (top - 1.2), z: Z_FRONT - 0.05, s: 0.8 + r() * 1.1, sy: 0.7 + r() * 0.5, ry: r() * 6, rx: r() * 2, c: pick(r, ROCK_TINTS) });
+    for (let x = a + 0.3 + r(); x < b - 0.2; x += 0.9 + r() * 1.6) {
+      if (surfaceAt(L, x) !== top) continue;   // (in front of a taller step that overlaps this one)
+      boulders.push({ x, y: 0.05, z: Z_FRONT + 0.25 + r() * 0.4, s: 0.9 + r() * 1.6, sy: 0.6 + r() * 0.6, ry: r() * 6, c: pick(r, ROCK_TINTS) });
+    }
+  }
+  for (let x = gx0 + 1; x < gx1 - 1; x += 1.4 + r() * 2) {    // the back wall: plants in its cracks too
+    if (nearStop(x, 0.4) || inFall(x)) continue;
+    for (let k = 0; k < 2; k++) cliffTufts.push({ x: x + r(), y: surfaceAt(L, x) + 1 + r() * (wallTop - surfaceAt(L, x) - 1.5), z: Z_BACK + 0.02, s: 0.7 + r() * 0.6, rx: 1.2, ry: r() * 0.5, c: pick(r, ['#6E9A3E', '#5E8C38']) });
+  }
+  scatter(grp, tuftGeo(), mat('#ffffff', { side: THREE.DoubleSide }), tufts.concat(cliffTufts));
+  scatter(grp, (GEO.boulder ||= new THREE.DodecahedronGeometry(0.35, 1)), mat('#ffffff', { map: rockTex(), roughness: 0.95 }), boulders, true);
   scatter(grp, (GEO.flower ||= new THREE.SphereGeometry(0.065, 6, 5)), mat('#ffffff', { roughness: 0.6 }), flowers);
   scatter(grp, (GEO.pebble ||= new THREE.DodecahedronGeometry(0.13, 0)), mat('#ffffff', { roughness: 0.9 }), pebbles, true);
   // the lake: water with moving ripples, lily pads, reeds, a fish that jumps, dragonflies
@@ -1039,6 +1104,45 @@ function vine(x, y, z, len, r) {
   }
   return g;
 }
+function barkTex() {           // palm bark: rings of old leaf scars along the trunk
+  return canvasTex('bark', 256, 64, (g) => {
+    g.fillStyle = '#8A6A48'; g.fillRect(0, 0, 256, 64);
+    for (let x = 0; x < 256; x += 16) {
+      g.fillStyle = '#6A4E32'; g.fillRect(x, 0, 3, 64);
+      g.fillStyle = 'rgba(255,230,190,0.18)'; g.fillRect(x + 3, 0, 2, 64);
+      g.strokeStyle = 'rgba(60,42,26,0.5)'; g.lineWidth = 1.5;
+      for (let y = 0; y < 64; y += 8) { g.beginPath(); g.moveTo(x + 4, y); g.lineTo(x + 11, y + 4); g.lineTo(x + 4, y + 8); g.stroke(); }
+    }
+  }, true);
+}
+function frondTex() {          // a feathery palm frond: a midrib and narrow leaflets that get shorter towards the tip
+  return canvasTex('frond', 256, 64, (g) => {
+    for (let x = 6; x < 250; x += 5) {
+      const len = 28 * Math.sin(Math.PI * Math.min(1, (x + 30) / 280)) + 3;
+      for (const s of [-1, 1]) {
+        g.strokeStyle = mixHex('#4E9A3A', '#86CC58', ((x * 7) % 10) / 10); g.lineWidth = 3;
+        g.beginPath(); g.moveTo(x, 32); g.quadraticCurveTo(x + 6, 32 + s * len * 0.6, x + 12, 32 + s * len); g.stroke();
+      }
+    }
+    g.strokeStyle = '#6B7A2E'; g.lineWidth = 4; g.beginPath(); g.moveTo(0, 32); g.lineTo(256, 32); g.stroke();
+  });
+}
+function archedFrondGeo(len, w, lift, droop) {   // a frond that rises from the crown, then arches and droops, its leaflets in a V
+  const g = new THREE.PlaneGeometry(len, w, 12, 2); g.translate(len / 2, 0, 0); g.rotateX(-Math.PI / 2);
+  const pos = g.attributes.position;
+  for (let i = 0; i < pos.count; i++) { const t = pos.getX(i) / len, z = pos.getZ(i); pos.setY(i, len * (lift * t - droop * t * t) + Math.abs(z) * 0.45); }
+  g.computeVertexNormals();
+  return g;
+}
+function taperedTube(curve, seg, r0, r1, radial, m) {   // a tube along a curve that gets thinner towards its end
+  const geo = new THREE.TubeGeometry(curve, seg, 1, radial, false), pos = geo.attributes.position, c = new THREE.Vector3(), v = new THREE.Vector3();
+  for (let i = 0; i <= seg; i++) {
+    curve.getPointAt(i / seg, c); const rad = r0 + (r1 - r0) * (i / seg);
+    for (let j = 0; j <= radial; j++) { const k = i * (radial + 1) + j; v.fromBufferAttribute(pos, k).sub(c).multiplyScalar(rad).add(c); pos.setXYZ(k, v.x, v.y, v.z); }
+  }
+  geo.computeVertexNormals();
+  return shadowed(new THREE.Mesh(geo, m));
+}
 function frondGeo(len, w) { const g = new THREE.PlaneGeometry(len, w); g.translate(len / 2, 0, 0); g.rotateX(-Math.PI / 2); return g; }
 function fern(x, y, z, s, r) {
   const g = new THREE.Group(); g.position.set(x, y, z); g.scale.setScalar(s);
@@ -1053,19 +1157,27 @@ function fern(x, y, z, s, r) {
 function buildTree(kind, x, y, z, r) {
   const t = new THREE.Group(); t.position.set(x, y, z);
   if (kind === 'palm') {
-    const trunkM = mat('#8A6A48'), ringM = mat('#6F5236');
-    for (let k = 0; k < 6; k++) {
-      const s = cyl(0.17 - k * 0.012, 0.19 - k * 0.012, 0.6, k % 2 ? ringM : trunkM, 8);
-      s.position.set(Math.sin(k * 0.35) * 0.25, 0.3 + k * 0.55, 0); s.rotation.z = -0.08 * k; t.add(s);
+    // one smooth, gently curving trunk that tapers and has rings, so it reads as a single piece
+    const bend = (r ? r() - 0.5 : 0.3) * 0.9 + 0.35, H = 3.4;
+    const curve = new THREE.QuadraticBezierCurve3(new THREE.Vector3(0, 0, 0), new THREE.Vector3(bend * 0.15, H * 0.55, 0), new THREE.Vector3(bend, H, 0));
+    const bark = barkTex(); bark.repeat.set(5, 1);
+    t.add(taperedTube(curve, 18, 0.21, 0.12, 10, mat('#ffffff', { map: bark, roughness: 0.9 })));
+    const foot = ball(0.3, mat('#7A5A3A'), 10); foot.scale.set(1, 0.35, 1); foot.position.y = 0.05; t.add(foot);
+    const crown = new THREE.Group(); crown.position.set(bend, H, 0); t.add(crown);
+    crown.add(ball(0.17, mat('#6B5A2E'), 10));
+    const frondM = mat('#ffffff', { map: frondTex(), alphaTest: 0.5, side: THREE.DoubleSide });
+    const big = (GEO.palmFrond ||= archedFrondGeo(1.9, 0.62, 0.45, 1.05)), young = (GEO.palmYoung ||= archedFrondGeo(1.2, 0.45, 0.9, 0.7));
+    for (let k = 0; k < 9; k++) {
+      const pivot = new THREE.Group(); pivot.rotation.y = k / 9 * Math.PI * 2 + (r ? r() * 0.4 : 0.2);
+      const f = shadowed(new THREE.Mesh(big, frondM), false); f.rotation.z = (k % 3) * 0.08; pivot.add(f); crown.add(pivot);
     }
-    const crown = new THREE.Group(); crown.position.set(0.55, 3.35, 0); t.add(crown);
-    const geo = (GEO.palm ||= frondGeo(1.7, 0.5)), m = leafMat('#ffffff');
-    for (let k = 0; k < 8; k++) {
-      const pivot = new THREE.Group(), droop = new THREE.Group();
-      pivot.rotation.y = k / 8 * Math.PI * 2 + 0.3; droop.rotation.z = 0.1 - (k % 2) * 0.4;
-      const frond = shadowed(new THREE.Mesh(geo, m), false); frond.rotation.x = 0.75; droop.add(frond); pivot.add(droop); crown.add(pivot);
+    for (let k = 0; k < 3; k++) {                               // younger fronds standing up in the middle
+      const pivot = new THREE.Group(); pivot.rotation.y = k / 3 * Math.PI * 2 + 0.5;
+      pivot.add(shadowed(new THREE.Mesh(young, frondM), false)); crown.add(pivot);
     }
-    for (let k = 0; k < 3; k++) { const nut = ball(0.13, mat('#6B4A2E'), 8); nut.position.set(0.5 + (k - 1) * 0.15, 3.2, 0.12 + (k % 2) * 0.1); t.add(nut); }
+    const dry = shadowed(new THREE.Mesh(big, mat('#9C7A48', { map: frondTex(), alphaTest: 0.5, side: THREE.DoubleSide })), false);   // an old dry frond hanging
+    dry.rotation.set(0, 2.2, -0.9); dry.scale.setScalar(0.8); crown.add(dry);
+    for (let k = 0; k < 4; k++) { const nut = ball(0.13, mat('#6B4A2E'), 10); nut.position.set(Math.cos(k * 1.6) * 0.16, -0.16 - (k % 2) * 0.08, Math.sin(k * 1.6) * 0.16); crown.add(nut); }
   } else if (kind === 'pine') {
     const trunk = cyl(0.14, 0.2, 1.0, mat('#6B4A2E'), 8); trunk.position.y = 0.5; t.add(trunk);
     for (let k = 0; k < 3; k++) {
@@ -1104,10 +1216,6 @@ function waterfall(grp, stat, [a, b], wallTop, anims) {
 
 /* ======== art: stops and their caves ======== */
 function buildStop(st, stat, live, anims, r) {
-  const stone = cyl(1.3, 1.42, 0.14, mat('#A8A095'), 22); stone.position.set(st.x, st.y - 0.05, 0); stat.add(stone);
-  for (let k = 0; k < 9; k++) { const c = ball(0.07, mat('#8E8576'), 5); const a = k / 9 * Math.PI * 2; c.position.set(st.x + Math.cos(a) * 1.36, st.y + 0.02, Math.sin(a) * 1.36); c.scale.y = 0.5; stat.add(c); }
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(1.12, 0.05, 6, 32), mat(st.color, { roughness: 0.6 }));
-  ring.rotation.x = -Math.PI / 2; ring.position.set(st.x, st.y + 0.025, 0); stat.add(ring);
   // plaque: a stone slab with the badge on it, on two posts, just in front of the wall, with a torch beside it
   const px = st.x, pz = Z_BACK + 0.35, py = st.y + 2.75;
   for (const dx of [-0.5, 0.5]) { const post = cyl(0.08, 0.1, 2.3, mat('#8E8576'), 6); post.position.set(px + dx, st.y + 1.15, pz - 0.05); stat.add(post); }
@@ -1671,7 +1779,7 @@ function buildPerson(r, opts = {}) {
 
 /* ======== art: copter ======== */
 const seatXOf = (k, seats) => -0.1 - k * (seats > 2 ? 0.45 : 0.55);
-function seatX(k, seats = G.L ? G.L.seats : 1) { return -0.1 - k * (seats > 2 ? 0.45 : 0.55); }
+function seatX(k, seats = G.seats || 1) { return -0.1 - k * (seats > 2 ? 0.45 : 0.55); }
 function weaveTex() {    // a woven basket
   return canvasTex('weave', 64, 64, (g) => {
     g.fillStyle = '#9C7442'; g.fillRect(0, 0, 64, 64);
@@ -1793,8 +1901,9 @@ function startLevel(n) {
   for (const p of G.people) p.fig.group.removeFromParent();
   Object.assign(G, { lv: n, L, t: 0, people: [], delivered: 0, gaveUp: 0, bumps: 0, autopilot: null, lastInput: 0, winT: -1,
     boardT: 0, fullT: 0, botT: 0, nextArrival: FIRST_ARRIVAL, firstDone: false, food: 1, chompT: 0, pteros: [], rings: [],
-    pteroT: 5, ringT: 2, rushT: L.rush ? L.rush.every * 0.6 : 0, ringsPopped: 0, trexRoar: null });
-  copterHX = L.seats > 2 ? COPTER_HX_BIG : COPTER_HX;
+    pteroT: 5, ringT: 2, rushT: L.rush ? L.rush.every * 0.6 : 0, ringsPopped: 0, trexRoar: null,
+    powerups: [], pops: [], powerT: POWERUP_EVERY[0] * 0.6, boostT: 0 });
+  G.seats = L.seats; copterHX = G.seats > 2 ? COPTER_HX_BIG : COPTER_HX;
   applyTime(Q.get('time') || L.time);
   const stops = L.stops.map((s, i) => {
     const y = s.on >= 0 ? L.blocks[s.on][2] : 0;
@@ -1809,9 +1918,20 @@ function startLevel(n) {
   if (L.lake) G.rects.push({ x0: L.lake[0], x1: L.lake[1], y0: -6, y1: -1.0 });
   for (const [a, b, top] of L.blocks) G.rects.push({ x0: a, x1: b, y0: -1, y1: top });
   if (L.sleeper) G.rects.push({ x0: L.sleeper[0] + 0.3, x1: L.sleeper[1] - 0.3, y0: -1, y1: SLEEPER_TOP });
-  const cv = buildCopter(L.seats);
+  const cv = buildCopter(G.seats);
   world.add(cv.group);
-  const startStop = stops.find((s) => Math.abs(s.x - L.start) < 0.05);
+  for (const st of stops) {
+    const same = (x) => Math.abs(topAt(x) - st.y) < 0.01;
+    let a = st.x, b = st.x;
+    while (a > 0 && same(a - 0.1)) a -= 0.1;
+    while (b < L.w && same(b + 0.1)) b += 0.1;
+    st.zone = [a, b];
+  }
+  for (const s1 of stops) for (const s2 of stops) {
+    if (s1 === s2 || Math.abs(s1.y - s2.y) > 0.01 || s1.x >= s2.x || s1.zone[1] < s2.x) continue;   // s1 left of s2 on one ledge
+    const mid = (s1.x + s2.x) / 2; s1.zone[1] = Math.min(s1.zone[1], mid); s2.zone[0] = Math.max(s2.zone[0], mid);
+  }
+  const startStop = stopAt(L.start, topAt(L.start));
   G.copter = { x: L.start, y: topAt(L.start), vx: 0, vy: 0, landed: { stop: startStop ? startStop.i : -1 }, face: 1, pedal: 0, rotorRate: 0,
     rotor: 0, crank: 0, dizzy: 0, eating: 0, yaw: 0, yawV: 0, pitch: 0, riders: [], vis: cv, intent: { kind: 'none' } };
   G.maxTop = Math.max(...G.rects.map((r) => r.y1));
@@ -1822,7 +1942,9 @@ function startLevel(n) {
 }
 
 /* ======== physics ======== */
+const speedBoost = () => (G.boostT > 0 ? BOOST : 1);
 function topAt(x) { let y = -1; for (const r of G.rects) if (x >= r.x0 && x <= r.x1) y = Math.max(y, r.y1); return y; }
+function stopAt(x, y) { return G.stops.find((s) => Math.abs(s.y - y) < 0.01 && x >= s.zone[0] && x <= s.zone[1]); }   // whose ledge is this?
 function windNow() {      // blows to the right: a steady part plus slow gusts
   const W = G.L.wind || 0;
   if (!W) return 0;
@@ -1842,7 +1964,7 @@ function controlIntent() {
     if (!w) return { kind: 'none' };
     const dx = w.x - c.x, dy = w.y - (c.y + 0.9), d = Math.hypot(dx, dy);
     if (d < FOLLOW_DEADZONE) return { kind: 'steer', dvx: 0, dvy: 0 };
-    const sp = Math.min(FLY_SPEED, (d - FOLLOW_DEADZONE) * FOLLOW_GAIN);
+    const sp = Math.min(FLY_SPEED * speedBoost(), (d - FOLLOW_DEADZONE) * FOLLOW_GAIN);
     let dvx = dx / d * sp, dvy = dy / d * sp;
     // climbing help: a rock step ahead at our height, and the finger is up on (or above) it: climb first, then over
     const wall = wallAhead(Math.sign(dx));
@@ -1861,11 +1983,6 @@ function wallAhead(dir) {
   }
   return null;
 }
-function snapStop() {
-  const c = G.copter;
-  for (const s of G.stops) { const dy = c.y - s.y; if (Math.abs(s.x - c.x) < LAND_SNAP && dy > -0.05 && dy < 3.5) return s; }
-  return null;
-}
 function stepCopter(dt) {
   const c = G.copter, it = controlIntent();
   c.intent = it;
@@ -1878,29 +1995,28 @@ function stepCopter(dt) {
     }
     if (!go) {
       c.vx = c.vy = 0; c.pedal = approach(c.pedal, 0, dt * 2);
-      if (c.landed.stop >= 0) c.x = approach(c.x, G.stops[c.landed.stop].x, dt * 1.5);
       return;
     }
     c.landed = null; c.vy = Math.max(TAKEOFF_HOP, it.kind === 'steer' ? it.dvy : 0);
     sfx('lift');
     maybe(c.riders.length ? ['p-wheee', 'p-flying', 'pilot-ooga'] : ['pilot-ooga']);
   }
-  let snapOK;
-  const wind = windNow();   // the air moves: letting go drifts with it, steering leans into it
+  let landOK;
+  const wind = windNow(), boost = speedBoost();   // the air moves: letting go drifts with it, steering leans into it
   if (it.kind === 'steer') {
-    c.vx = approach(c.vx, it.dvx + wind * 0.4, FLY_ACCEL * dt); c.vy = approach(c.vy, it.dvy, FLY_ACCEL * dt);
+    c.vx = approach(c.vx, it.dvx + wind * 0.4, FLY_ACCEL * boost * dt); c.vy = approach(c.vy, it.dvy, FLY_ACCEL * boost * dt);
     c.pedalT = clamp(0.35 + it.dvy / FLY_SPEED * 0.65, 0.15, 1);
-    snapOK = Math.abs(it.dvx) < 1.2 && it.dvy < 0.3;
+    landOK = Math.abs(it.dvx) < 1.2 && it.dvy < 0.3;
   } else if (it.kind === 'pads') {
     const want = (it.right ? 1 : 0) - (it.left ? 1 : 0);
-    c.vx = approach(c.vx, want * FLY_SPEED + wind, (want ? FLY_ACCEL : SIDE_DRAG) * dt);
-    c.vy = it.pedal ? Math.min(FLY_SPEED * 0.8, c.vy + PAD_LIFT * dt) : Math.max(-PAD_FALL_MAX, c.vy - PAD_GRAVITY * dt);
+    c.vx = approach(c.vx, want * FLY_SPEED * boost + wind, (want ? FLY_ACCEL * boost : SIDE_DRAG) * dt);
+    c.vy = it.pedal ? Math.min(FLY_SPEED * 0.8 * boost, c.vy + PAD_LIFT * boost * dt) : Math.max(-PAD_FALL_MAX, c.vy - PAD_GRAVITY * dt);
     c.pedalT = it.pedal ? 1 : 0.15;
-    snapOK = !want && !it.pedal;
+    landOK = !want && !it.pedal;
   } else {
     c.vx = approach(c.vx, wind, SIDE_DRAG * dt); c.vy = approach(c.vy, -SINK_SPEED, SINK_ACCEL * dt);
     c.pedalT = 0.25;
-    snapOK = true;
+    landOK = true;
   }
   c.pedal = approach(c.pedal, c.pedalT, dt * 3);
   if (G.L.hunger) {
@@ -1909,7 +2025,6 @@ function stepCopter(dt) {
     if (before >= FOOD_LOW && G.food < FOOD_LOW) { sfx('hungry'); Haptics.buzz('hungry'); voice('pilot-hungry'); }   // tummy rumbles
     if (G.food <= 0) { c.vy = Math.min(c.vy, HUNGRY_CLIMB); c.vx = clamp(c.vx, -FLY_SPEED * HUNGRY_SPEED, FLY_SPEED * HUNGRY_SPEED); }
   }
-  if (snapOK && c.vy < 0.3) { const s = snapStop(); if (s) c.vx = approach(c.vx, (s.x - c.x) * SNAP_PULL, FLY_ACCEL * dt); }
   // move and collide, one axis at a time
   c.x += c.vx * dt;
   for (const r of G.rects) if (overlaps(r, c.x, c.y)) { c.x = (c.x + copterHX) - r.x0 < r.x1 - (c.x - copterHX) ? r.x0 - copterHX - 1e-3 : r.x1 + copterHX + 1e-3; bumpX(); }
@@ -1919,7 +2034,7 @@ function stepCopter(dt) {
   for (const r of G.rects) if (overlaps(r, c.x, c.y)) {
     if (r.y1 - c.y < c.y + COPTER_H - r.y0) {           // on top of it
       c.y = r.y1; const fall = -c.vy; c.vy = 0;
-      if (snapOK) touchdown(r, fall);
+      if (landOK) touchdown(r, fall);
     } else {                                             // rotor under an overhang
       c.y = r.y0 - COPTER_H - 1e-3;
       if (c.vy > BUMP_MIN) { c.vy = -c.vy * BUMP_BOUNCE; bump(); } else c.vy = Math.min(c.vy, 0);
@@ -1944,7 +2059,7 @@ function bump() {
 function whoa() { for (const p of G.copter.riders) p.jump = 0.35; }
 function touchdown(r, fall) {
   const c = G.copter;
-  const s = G.stops.find((s) => Math.abs(c.x - s.x) < LAND_SNAP && Math.abs(s.y - r.y1) < 0.01);
+  const s = stopAt(c.x, r.y1);   // landing anywhere on a stop's ledge counts
   c.landed = { stop: s ? s.i : -1 };
   if (G.autopilot && (!s || s.i === G.autopilot.stop)) G.autopilot = null;
   G.boardT = 0.25;
@@ -2024,7 +2139,8 @@ function stepPeople(dt) {
       walkTo(p, s.x + s.dir * (QUEUE_START + p.slot * QUEUE_GAP), 0.55, dt);
     } else if (p.state === 'board') {
       if (landedAt !== p.from) { p.state = 'wait'; continue; }
-      if (walkTo(p, s.x + s.dir * 1.0, 0.35, dt, WALK_SPEED * 1.3)) {
+      const side = Math.sign(p.x - c.x) || s.dir;               // the copter's nearer side
+      if (walkTo(p, c.x + side * (copterHX + HOP_GAP), 0.4, dt, WALK_SPEED * 1.4)) {
         p.state = 'ride'; p.seat = seatsUsed(); c.riders.push(p);
         p.fig.group.removeFromParent(); c.vis.inner.add(p.fig.group);
         sfx('chirp'); Haptics.buzz('tap');
@@ -2045,14 +2161,14 @@ function stepPeople(dt) {
   }
   for (const p of G.people) if (p.dead) p.fig.group.removeFromParent();
   G.people = G.people.filter((p) => !p.dead);
-  // hopping out and in while the copter sits on a stone
+  // hopping out and in while the copter sits on a stop's ledge
   if (landedAt >= 0) {
     G.boardT -= dt;
     if (G.boardT <= 0) {
       const off = c.riders.find((p) => p.to === landedAt);
       if (off) { alight(off, G.stops[landedAt]); G.boardT = BOARD_GAP; }
       else {
-        const boarding = G.people.filter((p) => p.state === 'board'), free = G.L.seats - seatsUsed() - boarding.reduce((n, p) => n + p.seats, 0);
+        const boarding = G.people.filter((p) => p.state === 'board'), free = G.seats - seatsUsed() - boarding.reduce((n, p) => n + p.seats, 0);
         const queue = waitingAt(landedAt).filter((p) => p.state === 'wait'), next = queue.find((p) => p.seats <= free);
         if (next) { next.state = 'board'; G.boardT = BOARD_GAP; if (next.special === 'grandma') voice('p-ohmy'); else maybe('pilot-hopin'); }
         else if (queue.length && !boarding.length && G.fullT <= 0) { G.fullT = 4; sfx('full'); }
@@ -2066,7 +2182,8 @@ function alight(p, s) {
   c.riders.splice(c.riders.indexOf(p), 1);
   let k = 0; for (const q of c.riders) { q.seat = k; k += q.seats; }
   p.fig.group.removeFromParent(); world.add(p.fig.group);
-  Object.assign(p, { state: 'cheer', timer: 0, x: s.x + s.dir * 1.2, y: s.y, z: 0.45, from: s.i, jump: 0, face: s.dir });
+  const side = Math.sign(s.caveX - c.x) || s.dir;                // hop out on the side of their cave
+  Object.assign(p, { state: 'cheer', timer: 0, x: clamp(c.x + side * (copterHX + HOP_GAP), s.zone[0], s.zone[1]), y: s.y, z: 0.45, from: s.i, jump: 0, face: side });
   G.delivered++;
   sfx('hop'); sfx('cheer'); maybe(['p-yay', 'p-thanks', 'pilot-offyougo']); renderProgress(); puff(p.x, s.y + 1.6, '#FF8FB0', 6, 1.2); Haptics.buzz('ok');
   if (G.delivered >= G.L.target && G.winT < 0) G.winT = WIN_DELAY;
@@ -2126,6 +2243,91 @@ function syncHazards() {
   for (const r of G.rings) { r.vis.position.set(r.x, r.y, 0.2); r.vis.rotation.set(0.15 + Math.sin(r.t) * 0.1, 0.45 + Math.sin(r.t * 0.7) * 0.15, 0); r.vis.scale.setScalar(1 + Math.sin(r.t * 2.2) * 0.05); }
 }
 
+/* ======== power-ups: catch one by flying through it ======== */
+// a feather (faster for a while), a log (one more seat for the rest of the level), a steak (a full tummy), a flower (everyone
+// waiting cheers up). One at a time floats up near the copter now and then, bobbing in a bubble, and pops by itself later.
+const POWERUPS = {
+  feather: { icon: '🪶', color: '#7FD3FF', ok: () => true },
+  seat: { icon: '🪵', color: '#F2B51D', ok: () => G.seats < SEATS_MAX },
+  steak: { icon: '🍖', color: '#FF7A5A', ok: () => G.L.hunger && G.food < 0.85 },
+  flower: { icon: '🌼', color: '#FF8FB0', ok: () => G.people.some((p) => p.state === 'wait' && p.stage >= 1) },
+};
+function stepPowerups(dt) {
+  const L = G.L, c = G.copter;
+  if (G.boostT > 0) G.boostT = Math.max(0, G.boostT - dt);
+  if (G.lv + 1 < POWERUP_FROM) return;
+  if (!G.powerups.length && G.winT < 0 && (G.powerT -= dt) <= 0) {
+    G.powerT = rangeRnd(POWERUP_EVERY);
+    const kinds = Object.keys(POWERUPS).filter((k) => POWERUPS[k].ok());
+    for (let k = 0; k < 14 && kinds.length; k++) {      // somewhere open near the copter, clear of rock
+      const x = clamp(c.x + (rng() * 2 - 1) * 8, 1.5, L.w - 1.5), y = Math.max(topAt(x), 0) + 2.2 + rng() * 3;
+      if (y > L.h + SKY_EXTRA - 1.2) continue;
+      if (G.rects.some((r) => r.x1 > x - 1 && r.x0 < x + 1 && r.y1 > y - 1 && r.y0 < y + 1)) continue;
+      const kind = pick(rng, kinds);
+      G.powerups.push({ kind, x, y, t: 0, vis: buildPowerup(kind) });
+      sfx('pop');
+      break;
+    }
+  }
+  for (const u of G.powerups) {
+    u.t += dt;
+    const dx = clamp(u.x, c.x - copterHX, c.x + copterHX) - u.x, dy = clamp(u.y, c.y, c.y + COPTER_H) - u.y;
+    if (dx * dx + dy * dy < POWERUP_R * POWERUP_R) { catchPowerup(u.kind); u.dead = true; puff(u.x, u.y, POWERUPS[u.kind].color, 10, 2.2); puff(u.x, u.y, '#FFFFFF', 6, 1.6); }
+    else if (u.t > POWERUP_LIFE) { u.dead = true; puff(u.x, u.y, '#FFFFFF', 6, 1.2); }
+    if (u.dead) u.vis.removeFromParent();
+  }
+  G.powerups = G.powerups.filter((u) => !u.dead);
+}
+function catchPowerup(kind) {
+  const c = G.copter;
+  if (kind === 'feather') G.boostT = BOOST_TIME;
+  else if (kind === 'seat') { G.seats = Math.min(SEATS_MAX, G.seats + 1); rebuildCopter(); }
+  else if (kind === 'steak') G.food = 1;
+  else for (const p of G.people) if (p.state === 'wait' || p.state === 'ride') { p.wait *= 1 - CALM_SHARE; p.jump = 0.35; }
+  sfx('power'); Haptics.buzz('ring'); voice(kind === 'feather' ? 'pilot-ooga' : 'pilot-laugh');
+  const icon = new THREE.Sprite(new THREE.SpriteMaterial({ map: emojiTex(POWERUPS[kind].icon), transparent: true, depthTest: false, depthWrite: false }));
+  icon.renderOrder = 11; world.add(icon); G.pops.push({ icon, t: 0 });
+  tbx('powerup', { level: G.lv + 1, kind });
+}
+function rebuildCopter() {   // a bigger copter (one more seat) in place of the old one, riders and all
+  const c = G.copter, old = c.vis, cv = buildCopter(G.seats);
+  copterHX = G.seats > 2 ? COPTER_HX_BIG : COPTER_HX;
+  old.group.parent.add(cv.group); old.group.removeFromParent();
+  for (const p of c.riders) cv.inner.add(p.fig.group);
+  c.vis = cv;
+}
+function buildPowerup(kind) {
+  const P = POWERUPS[kind], g = new THREE.Group();
+  const bubble = new THREE.Mesh(DS, new THREE.MeshStandardMaterial({ color: P.color, transparent: true, opacity: 0.32, roughness: 0.1, metalness: 0.2, depthWrite: false }));
+  bubble.scale.setScalar(0.62); g.add(bubble);
+  const glow = new THREE.Sprite(glowMat(P.color).clone()); glow.scale.setScalar(2.2); glow.material.opacity = 0.55; g.add(glow);
+  const icon = new THREE.Sprite(new THREE.SpriteMaterial({ map: emojiTex(P.icon), transparent: true, depthWrite: false })); icon.scale.setScalar(0.85); g.add(icon);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.72, 0.04, 6, 30), mat(P.color, { emissive: P.color, emissiveIntensity: 0.6 })); g.add(ring);
+  g.userData = { ring, icon };
+  world.add(g);
+  return g;
+}
+function syncPowerups(dt) {
+  for (const u of G.powerups) {
+    const blink = u.t > POWERUP_LIFE - 3 && Math.sin(u.t * 18) < 0;
+    u.vis.visible = !blink;
+    u.vis.position.set(u.x, u.y + Math.sin(u.t * 2.2) * 0.18, 0.3);
+    u.vis.userData.ring.rotation.set(Math.sin(u.t) * 0.5, u.t * 2, 0);
+    u.vis.userData.icon.material.rotation = Math.sin(u.t * 3) * 0.2;
+  }
+  for (const q of G.pops) {                                     // the caught power-up's picture rises above the copter and fades
+    q.t += dt;
+    const c = G.copter;
+    q.icon.position.set(c.x, c.y + 2.7 + q.t * 1.2, 0.5); q.icon.scale.setScalar(0.9 + q.t * 0.4); q.icon.material.opacity = Math.max(0, 1 - q.t / 1.2);
+    if (q.t > 1.2) { q.icon.removeFromParent(); q.dead = true; }
+  }
+  G.pops = G.pops.filter((q) => !q.dead);
+  if (G.boostT > 0 && !G.copter.landed && Math.random() < dt * 14) {   // a feather boost leaves a little trail
+    const c = G.copter; puff(c.x - c.face * (copterHX + 0.4), c.y + 0.9, '#E8F6FF', 1, 0.5, Math.random, -0.2);
+  }
+  const b = $('boost'); b.hidden = !(G.boostT > 0); if (G.boostT > 0) b.style.setProperty('--f', (G.boostT / BOOST_TIME).toFixed(3));
+}
+
 /* ======== autopilot & demo bot ======== */
 function cruiseHeight(x0, x1, minY) {
   let top = minY;
@@ -2136,10 +2338,12 @@ function cruiseHeight(x0, x1, minY) {
 function startAutopilot(i) {
   const c = G.copter, s = G.stops[i];
   if (c.landed && c.landed.stop === i) return;
-  const cy = cruiseHeight(c.x, s.x, s.y);
+  const a = Math.max(s.zone[0], 0) + copterHX, b = Math.min(s.zone[1], G.L.w) - copterHX;   // where the whole copter fits on the ledge
+  const tx = a <= b ? clamp(s.x, a, b) : (s.zone[0] + s.zone[1]) / 2;
+  const cy = cruiseHeight(c.x, tx, s.y);
   const wps = [];
   if (c.y < cy - 0.2) wps.push({ x: c.x, y: cy });
-  wps.push({ x: s.x, y: Math.max(cy, c.y) }, { x: s.x, y: s.y });
+  wps.push({ x: tx, y: Math.max(cy, c.y) }, { x: tx, y: s.y - 0.5 });   // the last one is below the ledge's top, so it always touches down
   G.autopilot = { stop: i, wps };
 }
 function autopilotVel() {
@@ -2150,7 +2354,7 @@ function autopilotVel() {
   }
   const w = a.wps[0], dx = w.x - c.x, dy = w.y - c.y, d = Math.hypot(dx, dy);
   if (d < 0.02) return { x: 0, y: -SINK_SPEED };
-  const last = a.wps.length === 1, sp = Math.min(FLY_SPEED * (last ? 0.5 : 0.85), d * FOLLOW_GAIN + 0.6);
+  const last = a.wps.length === 1, sp = Math.min(FLY_SPEED * speedBoost() * (last ? 0.5 : 0.85), d * FOLLOW_GAIN + 0.6);
   return { x: dx / d * sp, y: dy / d * sp };
 }
 function nearestFood() {
@@ -2167,7 +2371,7 @@ function stepBot(dt) {
   if (here >= 0) {
     if (c.riders.some((p) => p.to === here)) return;
     if (G.people.some((p) => p.state === 'board')) return;
-    if (waitingAt(here).some((p) => p.seats <= G.L.seats - seatsUsed())) return;
+    if (waitingAt(here).some((p) => p.seats <= G.seats - seatsUsed())) return;
     if (G.L.hunger && isFood(here) && G.food < 0.95) return;
   }
   let target = -1;
@@ -2492,6 +2696,7 @@ const SFX = {
   chomp: () => { tone(220, 0.05, 'square', 0.05, 140); tone(180, 0.05, 'square', 0.04, 120, 0.09); },
   hungry: () => { tone(90, 0.5, 'sawtooth', 0.08, 70); tone(110, 0.35, 'sawtooth', 0.06, 80, 0.45); },
   ring: () => [1047, 1319, 1568, 2093].forEach((f, i) => tone(f, 0.22, 'sine', 0.14, null, i * 0.06)),
+  power: () => { [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, 0.16, 'triangle', 0.16, null, i * 0.045)); tone(2093, 0.4, 'sine', 0.06, 3136, 0.22); },
   fanfare: () => { Music.duck(2.4); [523, 659, 784, 1047, 784, 1047].forEach((f, i) => tone(f, 0.2, 'triangle', 0.22, null, i * 0.12)); },
   // ambience: short and quiet, each a few seconds apart
   tweet: () => { const b = 2300 + Math.random() * 600; for (let k = 0; k < 3; k++) tone(b, 0.07, 'sine', 0.035 * AMBIENCE_VOL, b * 1.3, k * 0.11); },
@@ -2755,7 +2960,7 @@ function syncCopter(dt) {
   v.tilt.rotation.z = c.pitch;                                     // nose down when flying forward
   v.tilt.rotation.x = clamp(-c.yawV * BANK_PER_TURN, -BANK_MAX, BANK_MAX);   // and it banks into the turn
   v.pilot.group.rotation.y = -c.yaw;                               // the pilot keeps facing us
-  const rate = c.landed ? (c.pedal > 0.05 ? 6 : 0) : 8 + c.pedal * 16;
+  const rate = c.landed ? (c.pedal > 0.05 ? 6 : 0) : (8 + c.pedal * 16) * speedBoost();
   c.rotorRate = approach(c.rotorRate, rate, dt * 12);
   c.rotor += c.rotorRate * dt; v.rotor.rotation.y = c.rotor; v.tailRotor.rotation.z = c.rotor * 2.2;
   const stroke = Math.floor(c.crank / Math.PI);
@@ -2825,6 +3030,7 @@ function step(dt) {
     if (Q.has('demo')) stepBot(dt);
     stepCopter(dt);
     stepHazards(dt);
+    stepPowerups(dt);
     stepRush(dt);
     stepAmbience(dt);
     G.nextArrival -= dt;
@@ -2843,7 +3049,7 @@ function frame(now) {
   acc += real * (Q.has('fast') ? FAST_MULT : 1);
   let n = 0;
   while (acc >= FIXED_DT && n++ < 40) { step(FIXED_DT); acc -= FIXED_DT; }
-  if (G.copter) { updateCamera(real); syncCopter(real); syncPeople(); syncWorld(real); syncHazards(); updateEdges(); }
+  if (G.copter) { updateCamera(real); syncCopter(real); syncPeople(); syncWorld(real); syncHazards(); syncPowerups(real); updateEdges(); }
   updateHint();
   if (++shadowN >= SHADOW_EVERY) { shadowN = 0; renderer.shadowMap.needsUpdate = true; }
   adaptDpr(real * 1000);
