@@ -9,7 +9,9 @@ Changed after publishing (2026-10-26, at the user's request):
 - No landing stones: a stop is its whole ledge; land anywhere on it and people walk over to the copter.
 - Random power-ups to catch: feather (faster), log (one more seat), steak (food), flower (patience).
 - A mountainside instead of a cut-through: natural rock with moss and plants, boulders, a meadow in front.
-- Palms with one smooth curved, ringed trunk and arching feathery fronds.
+- Palms with one curved trunk of stacked, lipped segments and arching feathery fronds.
+- Then: lumpy, varied rock (plates, grooves, colour patches, moss on ledges, a jagged crest), and the power-ups drop
+  from palms as coconuts instead of floating up.
 
 Built differently from this plan (milestone 3):
 - Levels 6 and 7 have four stops, not five (the rock steps and caves need the room).

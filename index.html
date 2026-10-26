@@ -225,10 +225,15 @@ const BUMP_MIN = 0.8;             // slower than this into rock and it just stop
 const SPLASH_UP = 4.5;            // dipping into the lake bounces the copter up this fast
 const DIZZY_TIME = 1.2;           // s the pilot's eyes spin after a bump
 const COPTER_HX = 1.35, COPTER_H = 2.1;   // copter collision box: half width, height above the skids (rotor included)
-const POWERUP_FROM = 2;           // power-ups float up from this level on
-const POWERUP_EVERY = [16, 26];   // s between two power-ups appearing (one at a time)
-const POWERUP_LIFE = 14;          // s a power-up floats before it pops by itself (it blinks for its last 3 s)
-const POWERUP_R = 0.9;            // how close the copter has to fly to catch one
+const POWERUP_FROM = 2;           // power-ups drop from the trees from this level on
+const POWERUP_EVERY = [16, 26];   // s between two power-ups dropping (one at a time)
+const POWERUP_LIFE = 14;          // s a power-up lies on the ground before it pops by itself (it blinks for its last 3 s)
+const POWERUP_R = 0.9;            // how close the copter has to come to catch one
+const DROP_SHAKE = 1.2;           // s a coconut wobbles in the tree before it falls
+const DROP_GRAVITY = 12;          // how fast it falls (units/s²); it bounces once or twice, then rolls to the front of the ledge
+const DROP_NEAR = 12;             // it drops from a tree this close to the copter (or the nearest one)
+const DROP_TREE_GAP = 10;         // a palm (a pine in the snow) is planted wherever no tree is this close, so one is never far
+const NUT_R = 0.26;               // the coconut's size
 const BOOST_TIME = 15, BOOST = 1.5;   // feather: this many seconds this much faster
 const SEATS_MAX = 4;              // log: an extra seat for the rest of the level, up to this many seats
 const CALM_SHARE = 0.5;           // flower: everyone waiting gets this share of their waiting forgiven
@@ -437,7 +442,7 @@ function mixHex(a, b, k) {     // sRGB mix of two '#rrggbb' colours
 function drawRock(g, bump) {
   const r = mulberry32(7), S = 512;
   const wrap = (fn) => { for (const ox of [-S, 0, S]) for (const oy of [-S, 0, S]) { g.save(); g.translate(ox, oy); fn(); g.restore(); } };
-  g.fillStyle = bump ? '#5A5A5A' : '#8C7F70'; g.fillRect(0, 0, S, S);
+  g.fillStyle = bump ? '#5A5A5A' : '#9A958E'; g.fillRect(0, 0, S, S);
   const plates = [];
   for (let k = 0; k < 34; k++) {
     const cx = r() * S, cy = r() * S, rad = 50 + r() * 80, n = 5 + Math.floor(r() * 3), rot = r() * 6, pts = [];
@@ -451,17 +456,17 @@ function drawRock(g, bump) {
       const gr = g.createRadialGradient(pl.cx - pl.rad * 0.3, pl.cy - pl.rad * 0.3, 2, pl.cx, pl.cy, pl.rad * 1.1);
       gr.addColorStop(0, '#E0E0E0'); gr.addColorStop(1, '#707070'); g.fillStyle = gr; g.fill();
     } else {
-      g.fillStyle = mixHex(mixHex('#A4968A', '#7E7264', pl.shade), '#9A8670', 0.25); g.fill();
+      g.fillStyle = mixHex(mixHex('#BCB6AE', '#8E8880', pl.shade), '#A0988A', 0.15); g.fill();   // near-grey: the cliff's own colours tint it
       g.strokeStyle = 'rgba(255,245,225,0.18)'; g.lineWidth = 3; g.beginPath();      // lit top-left edges
       pl.pts.forEach(([x, y], i) => { if (i < pl.pts.length / 2) (i ? g.lineTo(x, y) : g.moveTo(x, y)); }); g.stroke();
     }
-    g.strokeStyle = bump ? 'rgba(0,0,0,0.7)' : 'rgba(40,30,22,0.5)'; g.lineWidth = bump ? 4 : 2.5;   // cracks along some of the plate's edges
+    g.strokeStyle = bump ? 'rgba(0,0,0,0.45)' : 'rgba(40,30,22,0.22)'; g.lineWidth = bump ? 3 : 2;   // fine cracks along some of the plate's edges (the big ones are in the rock's shape)
     pl.pts.forEach(([x, y], i) => { if (!pl.edges[i]) return; const [x2, y2] = pl.pts[(i + 1) % pl.pts.length]; g.beginPath(); g.moveTo(x, y); g.lineTo(x2, y2); g.stroke(); });
   });
-  for (let k = 0; k < 14; k++) {                                   // long cracks running down the face
+  for (let k = 0; k < 6; k++) {                                    // long cracks running down the face
     let x = r() * S, y = r() * S; const pts = [[x, y]];
     for (let i = 0; i < 7; i++) { x += (r() - 0.5) * 30; y += 14 + r() * 22; pts.push([x, y]); }
-    wrap(() => { g.strokeStyle = bump ? 'rgba(0,0,0,0.8)' : 'rgba(30,22,16,0.6)'; g.lineWidth = bump ? 3 : 2; g.beginPath(); pts.forEach(([px, py], i) => (i ? g.lineTo(px, py) : g.moveTo(px, py))); g.stroke(); });
+    wrap(() => { g.strokeStyle = bump ? 'rgba(0,0,0,0.6)' : 'rgba(30,22,16,0.35)'; g.lineWidth = bump ? 3 : 1.5; g.beginPath(); pts.forEach(([px, py], i) => (i ? g.lineTo(px, py) : g.moveTo(px, py))); g.stroke(); });
   }
   if (bump) return;
   for (let k = 0; k < 22; k++) {                                   // dark streaks where rain runs down
@@ -740,6 +745,74 @@ function glowMat(color) {        // additive soft glow for flames, fireflies and
 }
 function shadowed(m, cast = true, receive = true) { m.castShadow = cast; m.receiveShadow = receive; return m; }
 /* a box whose UVs are in world units / 4, so one 4 x 4 rock tile repeats evenly over any size */
+/* rocky cliffs: a box cut into small facets that a smooth noise pushes in and out, flat shaded, so every rock face is lumpy,
+   with bulges, dents and little ledges, and its colour drifts between warm, grey and mossy. The push depends only on where a
+   corner is, so faces that share an edge stay joined. */
+function hash2(x, y) { const h = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return h - Math.floor(h); }
+function vnoise(x, y) {        // smooth value noise, -1..1
+  const ix = Math.floor(x), iy = Math.floor(y), fx = x - ix, fy = y - iy, u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy);
+  const a = hash2(ix, iy), b = hash2(ix + 1, iy), c = hash2(ix, iy + 1), d = hash2(ix + 1, iy + 1);
+  return (a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v) * 2 - 1;
+}
+const smooth01 = (t) => { t = clamp(t, 0, 1); return t * t * (3 - 2 * t); };
+function cellNoise(x, y) {   // nearest of a jittered grid of points: [its id 0..1, x and y from it, how far from the next one]
+  const ix = Math.floor(x), iy = Math.floor(y);
+  let d1 = 9, d2 = 9, id = 0, px = 0, py = 0;
+  for (let gx = ix - 1; gx <= ix + 1; gx++) for (let gy = iy - 1; gy <= iy + 1; gy++) {
+    const jx = gx + 0.1 + 0.8 * hash2(gx, gy), jy = gy + 0.1 + 0.8 * hash2(gy + 3.1, gx - 7.7), d = (x - jx) ** 2 + (y - jy) ** 2;
+    if (d < d1) { d2 = d1; d1 = d; id = hash2(gx + 0.37, gy + 0.71); px = jx; py = jy; } else if (d < d2) d2 = d;
+  }
+  return [id, x - px, y - py, Math.sqrt(d2) - Math.sqrt(d1)];
+}
+function slab(x, y, bev) {     // one plate of rock: its own height and tilt, bevelled down into a groove where it meets the next
+  const [id, rx, ry, edge] = cellNoise(x, y), b = smooth01(edge / bev);
+  const plate = 0.3 + (id - 0.5) * 0.7 + (hash2(id * 91, 1) - 0.5) * 1.4 * rx + (hash2(id * 57, 2) - 0.5) * 1.4 * ry;
+  return [plate * b - 0.8 * (1 - b), id];
+}
+function rockRelief(x, y, nx) {   // -1 (deep in) .. 1 (stands out), and which plate (0..1): big plates, small chips, buttresses
+  const [big, id] = slab(x / 1.7 + nx, y / 1.2, 0.28), [chip] = slab(x / 0.7 + nx + 30, y / 0.55 + 11, 0.3);
+  const v = 0.3 * vnoise(x * 0.13 + nx, y * 0.07 + 3) + 0.7 * big + 0.18 * chip + 0.06 * vnoise(x * 1.3, y * 1.3);
+  return [clamp(v, -1, 1), id];
+}
+const ROCK_COLORS = ['#F2DCC0', '#E6B47E', '#A9B8C4', '#D99478', '#FFF8EE', '#8E857C', '#CFD2B0', '#E0C8A8'].map((c) => new THREE.Color(c));   // sand, ochre, granite, red, pale, dark, greenish, buff
+const MOSS = new THREE.Color('#9AB060');
+const _rc = new THREE.Color();
+function rockColor(x, y, bulge, id = 0.5) {   // which rock (drifting across the face, a little different slab by slab), darker in the dents
+  const k = clamp(0.5 + 0.75 * vnoise(x * 0.11 + 1.7, y * 0.14 + 2.3) + (id - 0.5) * 0.35, 0, 1) * (ROCK_COLORS.length - 1), i = Math.min(Math.floor(k), ROCK_COLORS.length - 2);
+  return _rc.copy(ROCK_COLORS[i]).lerp(ROCK_COLORS[i + 1], k - i).multiplyScalar(0.5 + 0.5 * (0.5 + 0.5 * bulge));
+}
+function rockyBox(x0, x1, y0, y1, z0, z1, mats, off, cell) {   // off(x, y, z) -> [dx, dy, dz, bulge -1..1, slab id 0..1]
+  const w = x1 - x0, h = y1 - y0, d = z1 - z0, seg = (v) => Math.max(1, Math.round(v / cell));
+  const geo = new THREE.BoxGeometry(w, h, d, seg(w), seg(h), seg(d));
+  const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, cz = (z0 + z1) / 2, T = 4;
+  const pos = geo.attributes.position, nor = geo.attributes.normal, uv = geo.attributes.uv, col = new Float32Array(pos.count * 3);
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i) + cx, y = pos.getY(i) + cy, z = pos.getZ(i) + cz;
+    const side = Math.abs(nor.getX(i)) > 0.5, up = Math.abs(nor.getY(i)) > 0.5;
+    uv.setXY(i, (side ? z : x) / T, (up ? z : y) / T);          // the rock picture is pinned to the world, so blocks match
+    const [dx, dy, dz, bulge, id] = off(x, y, z);
+    pos.setXYZ(i, x + dx - cx, y + dy - cy, z + dz - cz);
+    const c = rockColor(x, y, bulge, id); col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
+  }
+  geo.computeVertexNormals();
+  for (let i = 0; i < pos.count; i++) {                         // moss on the shelves that face the sky
+    const up = smooth01((nor.getY(i) - 0.35) / 0.4) * (0.5 + 0.5 * vnoise(pos.getX(i) * 0.7, pos.getZ(i) * 0.7 + pos.getY(i)));
+    if (up > 0) { _rc.setRGB(col[i * 3], col[i * 3 + 1], col[i * 3 + 2]).lerp(MOSS, up * 0.85); col[i * 3] = _rc.r; col[i * 3 + 1] = _rc.g; col[i * 3 + 2] = _rc.b; }
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  const m = new THREE.Mesh(geo, mats); m.position.set(cx, cy, cz);
+  return shadowed(m);
+}
+function jaggedRockGeo(seed) {   // a boulder with flat broken faces: an icosahedron with its corners pulled in and out
+  const geo = new THREE.IcosahedronGeometry(0.35, 1), pos = geo.attributes.position, v = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i);
+    const k = 0.72 + 0.5 * hash2(Math.round(v.x * 100) + seed * 17, Math.round(v.y * 100) + Math.round(v.z * 100) * 3);
+    pos.setXYZ(i, v.x * k, v.y * k * 0.85, v.z * k);
+  }
+  geo.computeVertexNormals();
+  return geo;
+}
 function worldBox(x0, x1, y0, y1, z0, z1, mats) {
   const w = x1 - x0, h = y1 - y0, d = z1 - z0;
   const geo = new THREE.BoxGeometry(w, h, d);
@@ -845,39 +918,63 @@ function applyTime(name) {
 /* ======== art: world ======== */
 const Z_BACK = -3, Z_FRONT = 2, Z_GROUND_FRONT = 9;   // rock steps run z -3..2; the meadow in front runs out to z 9, below the view
 const CAVE = { R: 1.15, H: 1.75, D: 1.35, RIM: 0.22 };   // cave rooms: half width, height, depth, thickness of the cut edge
-const ROCK_TINTS = ['#EDE6DA', '#DDD4C6', '#F4EEE4', '#D2CABC'];   // boulders: light tints, so the rock texture keeps its own colour
+const ROCK_TINTS = ['#EDE6DA', '#DDD4C6', '#F4EEE4', '#D2CABC', '#F0D6BC', '#C9CFD4'];   // boulders: light tints, so the rock texture keeps its own colour
+const PALM_SEGMENTS = 12;                   // how many stacked segments make a palm trunk
+const ROCK_CELL = 0.3, WALL_CELL = 0.4;   // size of the rock facets on the steps and on the back wall
+const WALL_DEPTH = 2.5;                      // the back wall's thickness (its face is pushed back into it up to 1.4)
 function surfaceAt(L, x) { let y = 0; for (const [a, b, top] of L.blocks) if (x >= a && x <= b) y = Math.max(y, top); return y; }
 function wallTopOf(L) { return Math.max(Math.max(0, ...L.blocks.map((b) => b[2])) + 3.7, L.h * 0.62); }
 function buildWorld(L, stops) {
   const grp = new THREE.Group(), stat = new THREE.Group(); grp.add(stat);
   const anims = grp.userData.anims = [];
   const r = mulberry32(L.w * 7 + L.blocks.length * 13);
-  const rockM = mat('#ffffff', { map: rockTex(), bumpMap: rockBumpTex(), bumpScale: 3, roughness: 0.95 }), grassM = mat('#ffffff', { map: TOD.snow ? snowTex() : grassTex() });
-  const backM = mat(TOD.wall, { map: rockTex(), bumpMap: rockBumpTex(), bumpScale: 3, roughness: 0.95 });
+  const rockM = mat('#ffffff', { map: rockTex(), bumpMap: rockBumpTex(), bumpScale: 1.5, roughness: 0.95, vertexColors: true }), grassM = mat('#ffffff', { map: TOD.snow ? snowTex() : grassTex() });
+  const backM = mat(TOD.wall, { map: rockTex(), bumpMap: rockBumpTex(), bumpScale: 1.5, roughness: 0.95, vertexColors: true });
   const six = (top, side = rockM) => [side, side, top, side, side, side];
   const gx0 = -14, gx1 = L.w + 14, wallTop = wallTopOf(L);
   const segs = L.lake ? [[gx0, L.lake[0]], [L.lake[1], gx1]] : [[gx0, gx1]];
   const nearStop = (x, pad = 0) => stops.some((s) => Math.abs(x - s.caveX) < CAVE.R + CAVE.RIM + 0.35 + pad || Math.abs(x - s.x) < 1.0 + pad);
   const inFall = (x) => L.waterfall && x > L.waterfall[0] - 0.8 && x < L.waterfall[1] + 0.8;
   // ground, rock steps with a turf lip and hanging roots, the back wall and the plateau behind it
+  const nx = L.w * 1.37;   // each level gets its own stretch of the noise
+  const blockOff = ([a, b, top]) => (x, y, z) => {
+    const t = smooth01((top - y) / 0.7);                        // flat under the turf at the top
+    const [v, id] = rockRelief(x, y, nx), dz = (0.15 + 0.6 * v) * t;   // the front: slabs, chips and grooves
+    const out = x < (a + b) / 2 ? -1 : 1, edge = out < 0 ? x - a : b - x;
+    const open = surfaceAt(L, out < 0 ? a - 0.3 : b + 0.3) < y;  // a side shows only above its neighbour
+    const [sv, sid] = rockRelief(z, y, nx + 99), w = smooth01(1 - edge / 0.6) * t;
+    const dx = open ? -out * (0.08 + 0.3 * (0.5 + 0.5 * sv)) * w : 0;   // the sides: slabs too, bitten in, never out
+    return [dx, 0, dz, w > 0.5 && open ? sv : v, w > 0.5 && open ? sid : id];
+  };
+  const fallCalm = (x) => L.waterfall ? smooth01((Math.abs(x - (L.waterfall[0] + L.waterfall[1]) / 2) - (L.waterfall[1] - L.waterfall[0]) / 2 - 0.3) / 1.5) : 1;
+  const crest = (x) => fallCalm(x) * (2.6 * Math.max(0, vnoise(x * 0.27 + nx, 1.3)) + 0.7 * Math.abs(vnoise(x * 1.1 + nx, 4.1)));   // the wall's jagged skyline
+  const wallOff = (x, y) => {
+    const top = smooth01((y - wallTop + 1.8) / 1.8), [rv, id] = rockRelief(x, y, nx + 50), v = rv * (1 - top) - top;   // the top leans back: no big overhang shading the wall
+    const dz = -(0.1 + 0.65 * (1 - v)) * fallCalm(x);         // only ever pushed back, so nothing on its face sinks in
+    return [0, crest(x) * smooth01((y - wallTop + 3) / 3), dz, v, id];
+  };
+  const faceZ = (i, x, y) => Z_FRONT + blockOff(L.blocks[i])(x, y, Z_FRONT)[2];   // where block i's front face really is
+  const wallZ = (x, y) => Z_BACK + wallOff(x, y)[2];
   for (const [a, b] of segs) grp.add(worldBox(a, b, -9, 0, Z_BACK - 1, Z_GROUND_FRONT, six(grassM)));
-  for (const [a, b, top] of L.blocks) {
-    grp.add(worldBox(a, b, 0, top - 0.02, Z_BACK, Z_FRONT, six(grassM)));
+  for (const blk of L.blocks) {
+    const [a, b, top] = blk;
+    grp.add(rockyBox(a, b, -1, top - 0.02, Z_BACK, Z_FRONT, six(grassM), blockOff(blk), ROCK_CELL));
     const lip = shadowed(new THREE.Mesh(new THREE.BoxGeometry(b - a + 0.16, 0.2, Z_FRONT - Z_BACK + 0.08), grassM));
     lip.position.set((a + b) / 2, top - 0.1, (Z_FRONT + Z_BACK) / 2 + 0.04); stat.add(lip);
     const roll = cyl(0.1, 0.1, b - a + 0.16, grassM, 8); roll.rotation.z = Math.PI / 2; roll.position.set((a + b) / 2, top - 0.1, Z_FRONT + 0.08); stat.add(roll);
     for (let x = a + 0.5 + r() * 1.2; x < b - 0.4; x += 1.6 + r() * 2) stat.add(vine(x, top - 0.08, Z_FRONT + 0.12, 0.6 + r() * Math.min(1.8, top - 0.8), r));
   }
-  grp.add(worldBox(gx0, gx1, -9, wallTop, Z_BACK - 1.2, Z_BACK, six(grassM, backM)));
-  const plateau = worldBox(gx0 - 50, gx1 + 50, wallTop - 10, wallTop, -80, Z_BACK - 1.2, six(grassM, backM)); plateau.castShadow = false; grp.add(plateau);
-  for (let x = gx0 + 1; x < gx1; x += 2.3 + Math.sin(x) * 0.8) {      // boulders along the wall's top edge
-    if (inFall(x)) continue;
-    const b = ball(0.7 + Math.abs(Math.sin(x * 1.7)) * 0.6, mat('#9C907F'), 8);
-    b.scale.set(1.4, 0.8, 0.8); b.position.set(x, wallTop + 0.15, Z_BACK - 1.15); stat.add(b);   // kept behind the wall's face, clear of the plaques
+  grp.add(rockyBox(gx0, gx1, -1.2, wallTop, Z_BACK - WALL_DEPTH, Z_BACK, six(backM, backM), wallOff, WALL_CELL));
+  const plateau = worldBox(gx0 - 50, gx1 + 50, wallTop - 10, wallTop, -80, Z_BACK - WALL_DEPTH + 0.05, six(grassM, backM)); plateau.castShadow = false; grp.add(plateau);   // (behind the wall's deepest dents)
+  const crags = [];
+  for (let x = gx0 + 1; x < gx1; x += 1.3 + r() * 2.2) {               // crags and tors along the top of the wall
+    if (fallCalm(x) < 0.5) continue;
+    const tall = r() < 0.3;
+    crags.push({ x, y: wallTop + crest(x) * 0.5, z: Z_BACK - 1.2 - r() * 1.6, s: 1.6 + r() * 2.4, sy: tall ? 2 + r() * 2 : 0.8 + r() * 0.8, ry: r() * 6, rz: (r() - 0.5) * 0.3, c: pick(r, ROCK_TINTS) });
   }
   for (let x = gx0 + 2; x < gx1 - 1; x += 2.2 + r() * 2.5) {          // roots and creepers down the back wall
     if (nearStop(x) || inFall(x)) continue;
-    stat.add(vine(x, wallTop - 0.05, Z_BACK + 0.06, 1 + r() * 2.8, r));
+    stat.add(vine(x, wallTop - 0.05, wallZ(x, wallTop - 1) + 0.06, 1 + r() * 2.8, r));
   }
   for (let x = -1 + r(); x < L.w + 1; x += 1.3 + r() * 1.6) {         // ferns at the foot of the wall
     const y = surfaceAt(L, x);
@@ -907,28 +1004,35 @@ function buildWorld(L, stops) {
     }
   }
   const cliffTufts = [], boulders = [];
-  for (const [a, b, top] of L.blocks) {                        // a mountainside, not a cut: plants in the cracks of every rock face
-    for (let k = 0, n = Math.round((b - a) * top / 2.2); k < n; k++) {
+  L.blocks.forEach(([a, b, top], bi) => {                      // a mountainside, not a cut: plants in the cracks of every rock face
+    for (let k = 0, n = Math.round((b - a) * top / 1.6); k < n; k++) {
       const x = a + 0.2 + r() * (b - a - 0.4), y = 0.4 + r() * (top - 0.8);
-      cliffTufts.push({ x, y, z: Z_FRONT + 0.02, s: 0.8 + r() * 0.7, rx: 1.2, ry: r() * 0.5, c: pick(r, TOD.snow ? ['#C8D6DE', '#9DB08A'] : ['#6E9A3E', '#5E8C38', '#7FAE4A']) });
+      cliffTufts.push({ x, y, z: faceZ(bi, x, y) - 0.04, s: 0.8 + r() * 0.7, rx: 1.2, ry: r() * 0.5, c: pick(r, TOD.snow ? ['#C8D6DE', '#9DB08A'] : ['#6E9A3E', '#5E8C38', '#7FAE4A']) });
     }
     for (const ex of [a, b]) for (let y = 0.4 + r() * 0.6; y < top - 0.3; y += 0.8 + r() * 1.1) {   // outcrops on both corners
       if (surfaceAt(L, ex + (ex === a ? -0.3 : 0.3)) >= y) continue;   // (hidden against a taller neighbour)
       boulders.push({ x: ex + (ex === a ? 0.1 : -0.1), y, z: Z_FRONT - 0.35 - r() * 0.8, s: 1.1 + r() * 1.3, sy: 0.9 + r() * 0.6, ry: r() * 6, rx: r() * 2, c: pick(r, ROCK_TINTS) });
     }
-    for (let x = a + 0.8 + r() * 2; x < b - 0.6; x += 2.4 + r() * 2.6)   // ...and a few bulging out of the face
-      boulders.push({ x, y: 0.6 + r() * (top - 1.2), z: Z_FRONT - 0.05, s: 0.8 + r() * 1.1, sy: 0.7 + r() * 0.5, ry: r() * 6, rx: r() * 2, c: pick(r, ROCK_TINTS) });
+    for (let x = a + 0.8 + r() * 2; x < b - 0.6; x += 2.4 + r() * 2.6) {  // ...and a few bulging out of the face
+      const y = 0.6 + r() * (top - 1.2);
+      boulders.push({ x, y, z: faceZ(bi, x, y) - 0.1, s: 0.8 + r() * 1.1, sy: 0.7 + r() * 0.5, ry: r() * 6, rx: r() * 2, c: pick(r, ROCK_TINTS) });
+    }
     for (let x = a + 0.3 + r(); x < b - 0.2; x += 0.9 + r() * 1.6) {
       if (surfaceAt(L, x) !== top) continue;   // (in front of a taller step that overlaps this one)
-      boulders.push({ x, y: 0.05, z: Z_FRONT + 0.25 + r() * 0.4, s: 0.9 + r() * 1.6, sy: 0.6 + r() * 0.6, ry: r() * 6, c: pick(r, ROCK_TINTS) });
+      boulders.push({ x, y: 0.05, z: faceZ(bi, x, 0.3) + 0.2 + r() * 0.4, s: 0.9 + r() * 1.6, sy: 0.6 + r() * 0.6, ry: r() * 6, c: pick(r, ROCK_TINTS) });
     }
-  }
+  });
   for (let x = gx0 + 1; x < gx1 - 1; x += 1.4 + r() * 2) {    // the back wall: plants in its cracks too
     if (nearStop(x, 0.4) || inFall(x)) continue;
-    for (let k = 0; k < 2; k++) cliffTufts.push({ x: x + r(), y: surfaceAt(L, x) + 1 + r() * (wallTop - surfaceAt(L, x) - 1.5), z: Z_BACK + 0.02, s: 0.7 + r() * 0.6, rx: 1.2, ry: r() * 0.5, c: pick(r, ['#6E9A3E', '#5E8C38']) });
+    for (let k = 0; k < 2; k++) { const tx = x + r(), ty = surfaceAt(L, x) + 1 + r() * (wallTop - surfaceAt(L, x) - 1.5); cliffTufts.push({ x: tx, y: ty, z: wallZ(tx, ty) - 0.03, s: 0.7 + r() * 0.6, rx: 1.2, ry: r() * 0.5, c: pick(r, ['#6E9A3E', '#5E8C38']) }); }
   }
   scatter(grp, tuftGeo(), mat('#ffffff', { side: THREE.DoubleSide }), tufts.concat(cliffTufts));
-  scatter(grp, (GEO.boulder ||= new THREE.DodecahedronGeometry(0.35, 1)), mat('#ffffff', { map: rockTex(), roughness: 0.95 }), boulders, true);
+  const boulderM = mat('#ffffff', { map: rockTex(), roughness: 0.95, flatShading: true });
+  for (let v = 0; v < 3; v++) {                               // three boulder shapes, so no two neighbours look alike
+    const geo = (GEO['rock' + v] ||= jaggedRockGeo(v + 1));
+    scatter(grp, geo, boulderM, boulders.filter((_, i) => i % 3 === v), true);
+    scatter(grp, geo, boulderM, crags.filter((_, i) => i % 3 === v), false);
+  }
   scatter(grp, (GEO.flower ||= new THREE.SphereGeometry(0.065, 6, 5)), mat('#ffffff', { roughness: 0.6 }), flowers);
   scatter(grp, (GEO.pebble ||= new THREE.DodecahedronGeometry(0.13, 0)), mat('#ffffff', { roughness: 0.9 }), pebbles, true);
   // the lake: water with moving ripples, lily pads, reeds, a fish that jumps, dragonflies
@@ -997,7 +1101,30 @@ function buildWorld(L, stops) {
     anims.push((t) => { sm.opacity = TOD.stars * (0.85 + Math.sin(t * 1.3) * 0.15); });
   }
   // the level's own trees, the stops and their caves, animals, fireflies
-  for (const [x, kind] of L.trees || []) stat.add(buildTree(kind, x, surfaceAt(L, x), Z_BACK + 0.9, r));
+  // ...and the trees power-ups drop from: the level's own palms and fruit trees, and more palms wherever none is near
+  const drops = grp.userData.drops = [];
+  const plant = (kind, x, lean) => {
+    const tr = buildTree(kind, x, surfaceAt(L, x), Z_BACK + 0.9, r, lean); stat.add(tr);
+    const d = tr.userData.drop; if (d) drops.push({ kind, x: x + d[0], y: surfaceAt(L, x) + d[1], z: Z_BACK + 0.9 + d[2] });
+  };
+  for (const [x, kind] of L.trees || []) plant(kind, x);
+  const clearance = (x, plaque) => {   // room around a palm at x: clear of plaques (by this much), caves, ledge edges, other trees, water, the sleeper
+    const out = (a, b, pad) => (x > a - pad && x < b + pad ? -1 : 9);
+    return Math.min(x - 1, L.w - 1 - x, ...stops.map((s) => Math.min(Math.abs(x - s.x) - plaque, Math.abs(x - s.caveX) - (CAVE.R + CAVE.RIM + 0.35))),
+      ...L.blocks.flatMap(([a, b]) => [Math.abs(x - a) - 0.9, Math.abs(x - b) - 0.9]), ...(L.trees || []).map(([tx]) => Math.abs(x - tx) - 2.2),
+      inFall(x) ? -1 : 9, L.lake ? out(L.lake[0], L.lake[1], 0.6) : 9, L.sleeper ? out(L.sleeper[0], L.sleeper[1], 0.8) : 9);
+  };
+  for (let x = 4; x < L.w - 2; x += DROP_TREE_GAP) {
+    if (drops.some((d) => Math.abs(d.x - x) < DROP_TREE_GAP * 0.6)) continue;
+    for (const plaque of [1.75, 1.0]) {                          // fronds well clear of the plaques, or else close by and leaning away
+      let best = x, room = -9;                                  // the roomiest spot within 5 of here
+      for (let tx = x - 5; tx <= x + 5; tx += 0.1) { const c = clearance(tx, plaque); if (c > room) { room = c; best = tx; } }
+      if (room < 0.1) continue;
+      const near = stops.reduce((a, b) => (Math.abs(a.x - best) < Math.abs(b.x - best) ? a : b));
+      plant(TOD.snow ? 'pine' : 'palm', best, plaque < 1.75 ? Math.sign(best - near.x) : 0);
+      break;
+    }
+  }
   for (const st of stops) buildStop(st, stat, grp, anims, r);
   const before = grp.children.length;
   for (const d of L.decor || []) ANIMALS[d]?.(grp, L, anims, r, wallTop);
@@ -1104,15 +1231,18 @@ function vine(x, y, z, len, r) {
   }
   return g;
 }
-function barkTex() {           // palm bark: rings of old leaf scars along the trunk
-  return canvasTex('bark', 256, 64, (g) => {
-    g.fillStyle = '#8A6A48'; g.fillRect(0, 0, 256, 64);
-    for (let x = 0; x < 256; x += 16) {
-      g.fillStyle = '#6A4E32'; g.fillRect(x, 0, 3, 64);
-      g.fillStyle = 'rgba(255,230,190,0.18)'; g.fillRect(x + 3, 0, 2, 64);
-      g.strokeStyle = 'rgba(60,42,26,0.5)'; g.lineWidth = 1.5;
-      for (let y = 0; y < 64; y += 8) { g.beginPath(); g.moveTo(x + 4, y); g.lineTo(x + 11, y + 4); g.lineTo(x + 4, y + 8); g.stroke(); }
-    }
+function barkTex() {           // one palm trunk segment (left = its narrow foot, right = its jutting top lip), repeated up the trunk
+  return canvasTex('bark', 64, 64, (g) => {
+    const gr = g.createLinearGradient(0, 0, 64, 0);
+    gr.addColorStop(0, '#5E4228'); gr.addColorStop(0.15, '#7A5A3A'); gr.addColorStop(0.68, '#9C7A52'); gr.addColorStop(0.79, '#C29C72');
+    gr.addColorStop(0.83, '#4A321E'); gr.addColorStop(1, '#3A2616');   // the lip's light rim, then its shadowed underside
+    g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+    g.strokeStyle = 'rgba(50,34,20,0.45)'; g.lineWidth = 1.2;      // fibres running up the segment
+    for (let y = 2; y < 64; y += 5) { g.beginPath(); g.moveTo(4, y); g.lineTo(44, y + ((y * 7) % 5) - 2); g.stroke(); }
+    g.strokeStyle = 'rgba(255,230,190,0.25)';
+    for (let y = 4; y < 64; y += 9) { g.beginPath(); g.moveTo(14, y); g.lineTo(40, y + 1); g.stroke(); }
+    g.fillStyle = 'rgba(60,40,24,0.55)';                        // old leaf scars just under the lip
+    for (let y = 6; y < 64; y += 16) { g.beginPath(); g.moveTo(42, y); g.lineTo(50, y + 5); g.lineTo(42, y + 10); g.fill(); }
   }, true);
 }
 function frondTex() {          // a feathery palm frond: a midrib and narrow leaflets that get shorter towards the tip
@@ -1134,10 +1264,10 @@ function archedFrondGeo(len, w, lift, droop) {   // a frond that rises from the 
   g.computeVertexNormals();
   return g;
 }
-function taperedTube(curve, seg, r0, r1, radial, m) {   // a tube along a curve that gets thinner towards its end
+function taperedTube(curve, seg, r0, r1, radial, m, shape = () => 1) {   // a tube along a curve that gets thinner towards its end
   const geo = new THREE.TubeGeometry(curve, seg, 1, radial, false), pos = geo.attributes.position, c = new THREE.Vector3(), v = new THREE.Vector3();
   for (let i = 0; i <= seg; i++) {
-    curve.getPointAt(i / seg, c); const rad = r0 + (r1 - r0) * (i / seg);
+    curve.getPointAt(i / seg, c); const rad = (r0 + (r1 - r0) * (i / seg)) * shape(i);
     for (let j = 0; j <= radial; j++) { const k = i * (radial + 1) + j; v.fromBufferAttribute(pos, k).sub(c).multiplyScalar(rad).add(c); pos.setXYZ(k, v.x, v.y, v.z); }
   }
   geo.computeVertexNormals();
@@ -1154,14 +1284,15 @@ function fern(x, y, z, s, r) {
   }
   return g;
 }
-function buildTree(kind, x, y, z, r) {
+function buildTree(kind, x, y, z, r, lean = 0) {   // lean: a palm bends this way (+1 right, -1 left), or either way when 0
   const t = new THREE.Group(); t.position.set(x, y, z);
   if (kind === 'palm') {
-    // one smooth, gently curving trunk that tapers and has rings, so it reads as a single piece
-    const bend = (r ? r() - 0.5 : 0.3) * 0.9 + 0.35, H = 3.4;
+    // one gently curving trunk built of stacked segments, each narrow at its foot and jutting out in a lip at its top
+    const bend = lean ? lean * (0.75 + 0.25 * (r ? r() : 0.5)) : (r ? r() - 0.5 : 0.3) * 0.9 + 0.35, H = 3.4;
     const curve = new THREE.QuadraticBezierCurve3(new THREE.Vector3(0, 0, 0), new THREE.Vector3(bend * 0.15, H * 0.55, 0), new THREE.Vector3(bend, H, 0));
-    const bark = barkTex(); bark.repeat.set(5, 1);
-    t.add(taperedTube(curve, 18, 0.21, 0.12, 10, mat('#ffffff', { map: bark, roughness: 0.9 })));
+    const bark = barkTex(); bark.repeat.set(PALM_SEGMENTS, 1);
+    const lip = [0.8, 0.9, 1.0, 1.1, 1.24];                   // five rings per segment: its foot ... its lip (then a step in to the next foot)
+    t.add(taperedTube(curve, PALM_SEGMENTS * 5, 0.2, 0.12, 12, mat('#ffffff', { map: bark, roughness: 0.9 }), (i) => lip[i % 5]));
     const foot = ball(0.3, mat('#7A5A3A'), 10); foot.scale.set(1, 0.35, 1); foot.position.y = 0.05; t.add(foot);
     const crown = new THREE.Group(); crown.position.set(bend, H, 0); t.add(crown);
     crown.add(ball(0.17, mat('#6B5A2E'), 10));
@@ -1178,17 +1309,20 @@ function buildTree(kind, x, y, z, r) {
     const dry = shadowed(new THREE.Mesh(big, mat('#9C7A48', { map: frondTex(), alphaTest: 0.5, side: THREE.DoubleSide })), false);   // an old dry frond hanging
     dry.rotation.set(0, 2.2, -0.9); dry.scale.setScalar(0.8); crown.add(dry);
     for (let k = 0; k < 4; k++) { const nut = ball(0.13, mat('#6B4A2E'), 10); nut.position.set(Math.cos(k * 1.6) * 0.16, -0.16 - (k % 2) * 0.08, Math.sin(k * 1.6) * 0.16); crown.add(nut); }
+    t.userData.drop = [bend * 0.95, H - 0.35, 0.3];             // where a power-up coconut hangs before it drops
   } else if (kind === 'pine') {
     const trunk = cyl(0.14, 0.2, 1.0, mat('#6B4A2E'), 8); trunk.position.y = 0.5; t.add(trunk);
     for (let k = 0; k < 3; k++) {
       const rad = 1.05 - k * 0.27, c = shadowed(new THREE.Mesh(new THREE.ConeGeometry(rad, 1.3, 10), mat('#2F5E3A'))); c.position.y = 1.4 + k * 0.72; t.add(c);
       if (TOD.snow) { const cap = shadowed(new THREE.Mesh(new THREE.ConeGeometry(rad * 0.62, 0.55, 10), mat('#F2F5F8'))); cap.position.y = 1.4 + k * 0.72 + 0.4; t.add(cap); }
     }
+    t.userData.drop = [0.2, 1.6, 0.8];
   } else if (kind === 'apple') {
     const trunk = cyl(0.18, 0.26, 1.6, mat('#7A5638'), 8); trunk.position.y = 0.8; t.add(trunk);
     for (const [dx, dy, s] of [[0, 2.35, 1.2], [-0.75, 2.0, 0.85], [0.8, 2.05, 0.9], [0.1, 2.9, 0.8]]) { const c = ball(s, mat('#5E9E45'), 12); c.position.set(dx, dy, 0); c.scale.set(1, 0.85, 0.85); t.add(c); }
     const appleM = mat('#E8413A', { roughness: 0.5 });
     for (let k = 0; k < 12; k++) { const a = ball(0.13, appleM, 8); const u = k * 2.4; a.position.set(Math.cos(u) * 1.15, 2.0 + Math.sin(k * 1.3) * 0.65, 0.65 + Math.sin(u) * 0.2); t.add(a); }
+    t.userData.drop = [0.3, 1.9, 0.8];
   } else {
     const bm = mat('#6E9A3E');
     for (const [dx, dy, s] of [[0, 0.35, 0.7], [-0.55, 0.25, 0.5], [0.55, 0.28, 0.55]]) { const b = ball(s, bm, 10); b.scale.set(1.2, 0.8, 0.9); b.position.set(dx, dy, 0); t.add(b); }
@@ -1910,7 +2044,7 @@ function startLevel(n) {
     return { i, num: i + 1, kind: s.kind, icon: STOP_ICONS[s.kind], color: STOP_COLORS[i % STOP_COLORS.length], x: s.x, y, dir: s.dir, caveX: s.x + s.dir * CAVE_DX };
   });
   world = buildWorld(L, stops); scene.add(world);
-  G.stops = stops;
+  G.stops = stops; G.drops = world.userData.drops;
   G.rects = [];
   const gx0 = -14, gx1 = L.w + 14;
   const segs = L.lake ? [[gx0, L.lake[0]], [L.lake[1], gx1]] : [[gx0, gx1]];
@@ -2245,7 +2379,8 @@ function syncHazards() {
 
 /* ======== power-ups: catch one by flying through it ======== */
 // a feather (faster for a while), a log (one more seat for the rest of the level), a steak (a full tummy), a flower (everyone
-// waiting cheers up). One at a time floats up near the copter now and then, bobbing in a bubble, and pops by itself later.
+// waiting cheers up). Now and then a glowing coconut (an apple, a pine cone) with one of them on it wobbles in a tree near the
+// copter, drops, bounces and rolls to the front of the ledge; catch it on the way down or land by it. It pops by itself later.
 const POWERUPS = {
   feather: { icon: '🪶', color: '#7FD3FF', ok: () => true },
   seat: { icon: '🪵', color: '#F2B51D', ok: () => G.seats < SEATS_MAX },
@@ -2256,24 +2391,33 @@ function stepPowerups(dt) {
   const L = G.L, c = G.copter;
   if (G.boostT > 0) G.boostT = Math.max(0, G.boostT - dt);
   if (G.lv + 1 < POWERUP_FROM) return;
-  if (!G.powerups.length && G.winT < 0 && (G.powerT -= dt) <= 0) {
+  if (!G.powerups.length && G.winT < 0 && G.drops.length && (G.powerT -= dt) <= 0) {
     G.powerT = rangeRnd(POWERUP_EVERY);
     const kinds = Object.keys(POWERUPS).filter((k) => POWERUPS[k].ok());
-    for (let k = 0; k < 14 && kinds.length; k++) {      // somewhere open near the copter, clear of rock
-      const x = clamp(c.x + (rng() * 2 - 1) * 8, 1.5, L.w - 1.5), y = Math.max(topAt(x), 0) + 2.2 + rng() * 3;
-      if (y > L.h + SKY_EXTRA - 1.2) continue;
-      if (G.rects.some((r) => r.x1 > x - 1 && r.x0 < x + 1 && r.y1 > y - 1 && r.y0 < y + 1)) continue;
+    if (kinds.length) {
+      const near = G.drops.filter((d) => Math.abs(d.x - c.x) < DROP_NEAR);
+      const d = near.length ? pick(rng, near) : G.drops.reduce((a, b) => (Math.abs(a.x - c.x) < Math.abs(b.x - c.x) ? a : b));
       const kind = pick(rng, kinds);
-      G.powerups.push({ kind, x, y, t: 0, vis: buildPowerup(kind) });
-      sfx('pop');
-      break;
+      G.powerups.push({ kind, x: d.x, y: d.y, z: d.z, vy: 0, phase: 'shake', t: 0, vis: buildPowerup(kind, d.kind) });
+      sfx('rustle');
     }
   }
   for (const u of G.powerups) {
     u.t += dt;
+    if (u.phase === 'shake' && u.t > DROP_SHAKE) { u.phase = 'fall'; u.t = 0; }
+    if (u.phase !== 'shake') u.z = approach(u.z, 0.4, dt * 2.2);   // rolls forward to the front of the ledge
+    if (u.phase === 'fall') {
+      const ground = (L.lake && u.x > L.lake[0] && u.x < L.lake[1] ? -0.15 : Math.max(topAt(u.x), 0)) + NUT_R;
+      u.vy -= DROP_GRAVITY * dt; u.y += u.vy * dt;
+      if (u.y <= ground) {
+        u.y = ground;
+        if (u.vy < -2.5) { u.vy = -u.vy * 0.35; sfx('thump', 0.15); puff(u.x, ground - NUT_R + 0.05, '#CDBFA6', 4, 1); }
+        else { u.vy = 0; u.phase = 'rest'; u.t = 0; }
+      }
+    }
     const dx = clamp(u.x, c.x - copterHX, c.x + copterHX) - u.x, dy = clamp(u.y, c.y, c.y + COPTER_H) - u.y;
     if (dx * dx + dy * dy < POWERUP_R * POWERUP_R) { catchPowerup(u.kind); u.dead = true; puff(u.x, u.y, POWERUPS[u.kind].color, 10, 2.2); puff(u.x, u.y, '#FFFFFF', 6, 1.6); }
-    else if (u.t > POWERUP_LIFE) { u.dead = true; puff(u.x, u.y, '#FFFFFF', 6, 1.2); }
+    else if (u.phase === 'rest' && u.t > POWERUP_LIFE) { u.dead = true; puff(u.x, u.y, '#FFFFFF', 6, 1.2); }
     if (u.dead) u.vis.removeFromParent();
   }
   G.powerups = G.powerups.filter((u) => !u.dead);
@@ -2296,24 +2440,32 @@ function rebuildCopter() {   // a bigger copter (one more seat) in place of the 
   for (const p of c.riders) cv.inner.add(p.fig.group);
   c.vis = cv;
 }
-function buildPowerup(kind) {
-  const P = POWERUPS[kind], g = new THREE.Group();
-  const bubble = new THREE.Mesh(DS, new THREE.MeshStandardMaterial({ color: P.color, transparent: true, opacity: 0.32, roughness: 0.1, metalness: 0.2, depthWrite: false }));
-  bubble.scale.setScalar(0.62); g.add(bubble);
-  const glow = new THREE.Sprite(glowMat(P.color).clone()); glow.scale.setScalar(2.2); glow.material.opacity = 0.55; g.add(glow);
-  const icon = new THREE.Sprite(new THREE.SpriteMaterial({ map: emojiTex(P.icon), transparent: true, depthWrite: false })); icon.scale.setScalar(0.85); g.add(icon);
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.72, 0.04, 6, 30), mat(P.color, { emissive: P.color, emissiveIntensity: 0.6 })); g.add(ring);
-  g.userData = { ring, icon };
+function buildPowerup(kind, tree) {   // the nut (a coconut, an apple or a pine cone), a glow and a ring in the power-up's colour, its picture above
+  const P = POWERUPS[kind], g = new THREE.Group(), nut = new THREE.Group(); g.add(nut);
+  if (tree === 'apple') {
+    nut.add(ball(NUT_R, mat('#E8413A', { roughness: 0.45 }), 12));
+    const stem = cyl(0.02, 0.02, 0.14, mat('#5A3A20'), 5); stem.position.y = NUT_R; nut.add(stem);
+  } else if (tree === 'pine') {
+    const cone = new THREE.Mesh((GEO.pineCone ||= new THREE.ConeGeometry(NUT_R * 0.8, NUT_R * 2.6, 8)), mat('#7A5230', { flatShading: true })); cone.rotation.x = Math.PI; nut.add(cone);
+  } else {
+    nut.add(ball(NUT_R, mat('#6B4A2E', { roughness: 0.8 }), 12));
+    for (const [dx, dy] of [[-0.07, 0.05], [0.07, 0.05], [0, -0.06]]) { const e = ball(0.035, mat('#2E1E12'), 6); e.position.set(dx, dy, NUT_R * 0.93); nut.add(e); }   // a coconut's three eyes
+  }
+  const glow = new THREE.Sprite(glowMat(P.color).clone()); glow.scale.setScalar(1.8); glow.material.opacity = 0.6; g.add(glow);
+  const icon = new THREE.Sprite(new THREE.SpriteMaterial({ map: emojiTex(P.icon), transparent: true, depthTest: false, depthWrite: false })); icon.scale.setScalar(0.75); icon.renderOrder = 10; g.add(icon);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.46, 0.035, 6, 30), mat(P.color, { emissive: P.color, emissiveIntensity: 0.6 })); g.add(ring);
+  g.userData = { ring, icon, nut };
   world.add(g);
   return g;
 }
 function syncPowerups(dt) {
   for (const u of G.powerups) {
-    const blink = u.t > POWERUP_LIFE - 3 && Math.sin(u.t * 18) < 0;
+    const blink = u.phase === 'rest' && u.t > POWERUP_LIFE - 3 && Math.sin(u.t * 18) < 0, { ring, icon, nut } = u.vis.userData;
     u.vis.visible = !blink;
-    u.vis.position.set(u.x, u.y + Math.sin(u.t * 2.2) * 0.18, 0.3);
-    u.vis.userData.ring.rotation.set(Math.sin(u.t) * 0.5, u.t * 2, 0);
-    u.vis.userData.icon.material.rotation = Math.sin(u.t * 3) * 0.2;
+    u.vis.position.set(u.x, u.y, u.z);
+    nut.rotation.z = u.phase === 'shake' ? Math.sin(u.t * 26) * 0.35 : 0;     // wobbling on its stalk, about to drop
+    ring.rotation.set(Math.PI / 2 + Math.sin(u.t * 1.3) * 0.3, 0, u.t * 2);
+    icon.position.y = 0.72 + Math.sin(u.t * 3) * 0.08; icon.material.rotation = Math.sin(u.t * 3) * 0.2;
   }
   for (const q of G.pops) {                                     // the caught power-up's picture rises above the copter and fades
     q.t += dt;
@@ -2684,6 +2836,7 @@ const SFX = {
   creak: () => tone(560 + Math.random() * 120, 0.08, 'triangle', 0.025, 380),
   splash: () => { noise(0.6, 0.3, 1800); tone(500, 0.2, 'sine', 0.12, 180); tone(900, 0.12, 'sine', 0.05, 1500, 0.15); },
   pop: () => tone(520, 0.1, 'triangle', 0.12, 780),
+  rustle: () => { noise(0.5, 0.07, 3200); noise(0.3, 0.05, 2400); tone(700, 0.08, 'triangle', 0.05, 900, 0.35); },
   chirp: () => { tone(880, 0.08, 'triangle', 0.18, 1200); tone(1320, 0.1, 'triangle', 0.18, 1500, 0.08); },
   hop: () => { tone(1100, 0.07, 'triangle', 0.14, 760); },
   cheer: () => [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.14, 'triangle', 0.2, null, i * 0.08)),

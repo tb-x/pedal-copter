@@ -14,9 +14,10 @@ made in the browser.
 
 ## What you see
 
-The valley is a rocky mountainside: cliffs of weathered rock with moss, lichen, rain streaks and plants growing in
-the cracks, boulders at their feet, and a meadow of grass and flowers in front. Everything is built in code; there are
-no picture files.
+The valley is a rocky mountainside: lumpy cliffs of rock plates and chips with grooves between them, bulges and dents,
+patches of sandy, ochre, grey and reddish rock, moss on the ledges that face the sky and plants growing in the cracks,
+jagged boulders at their feet, crags along the skyline, and a meadow of grass and flowers in front. Palms have trunks
+of stacked segments, each jutting out in a lip. Everything is built in code; there are no picture files.
 
 - **Caves** are rooms cut open at the front, each with ochre paintings on the walls (mammoths and hunters, fruit
   trees, fish, flames) and someone at home: a cave person stirring a pot by the fire with a baby asleep on a fur bed
@@ -87,8 +88,10 @@ no picture files.
 
 ## Power-ups
 
-From level 2 on, a power-up floats up near the copter every 16–26 seconds, bobbing in a glowing bubble. Fly through it
-to catch it (its picture pops up over the pilot); if nobody catches it, it blinks and pops after 14 seconds.
+From level 2 on, every 16–26 seconds a glowing coconut with a power-up's picture on it wobbles in a palm near the copter
+(an apple on an apple tree, a pine cone in the snow), drops, bounces and rolls to the front of the ledge. Catch it on the
+way down or land next to it (its picture pops up over the pilot); if nobody does, it blinks and pops after 14 seconds.
+Extra palms are planted where the level has no tree nearby, so there's always one within reach.
 
 - 🪶 **Feather**: the copter flies half as fast again for 15 seconds (a meter shows the time left, and it leaves a
   little trail).
@@ -96,8 +99,9 @@ to catch it (its picture pops up over the pilot); if nobody catches it, it blink
 - 🍖 **Steak**: a full food meter (only on hunger levels, when it's not full).
 - 🌼 **Flower**: everyone waiting or riding cheers up (half their waiting is forgiven).
 
-Tuning: `POWERUP_FROM`, `POWERUP_EVERY`, `POWERUP_LIFE`, `POWERUP_R` (how close counts), `BOOST_TIME`, `BOOST`,
-`SEATS_MAX`, `CALM_SHARE`.
+Tuning: `POWERUP_FROM`, `POWERUP_EVERY`, `POWERUP_LIFE`, `POWERUP_R` (how close counts), `DROP_SHAKE` (how long it
+wobbles first), `DROP_GRAVITY`, `DROP_NEAR` (which trees count as near), `DROP_TREE_GAP` (where extra palms go), `NUT_R`,
+`BOOST_TIME`, `BOOST`, `SEATS_MAX`, `CALM_SHARE`.
 
 ## Controls
 
@@ -164,6 +168,9 @@ All at the top of the script in `index.html`:
 | `HOP_GAP` | 0.25 | people hop in and out this far beside the copter |
 | `BUMP_BOUNCE` | 0.45 | how much speed it keeps when it boings off rock |
 | `SKY_EXTRA` | 9 | how far above the level's picture the copter can climb (the camera follows) |
+| `ROCK_CELL`, `WALL_CELL` | 0.3, 0.4 | size of the little facets the rock steps and the back wall are cut into (smaller is lumpier but slower) |
+| `WALL_DEPTH` | 2.5 | how thick the back wall is; its face is pushed back into it up to 1.4 |
+| `PALM_SEGMENTS` | 12 | how many stacked segments make a palm trunk |
 | `CLIMB_HELP_BELOW` | 0.6 | follow-my-finger: a finger this far below a ledge's top (or higher) makes the copter climb over it first |
 | `TAKEOFF_HOP` | 1.6 | upward speed when lifting off |
 | `SPLASH_UP` | 4.5 | how fast the lake bounces the copter back up |
