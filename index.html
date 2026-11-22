@@ -2623,6 +2623,10 @@ const POWERUPS = {
   steak: { icon: '🍖', color: '#FF7A5A', ok: () => G.L.hunger && G.food < 0.85 },
   flower: { icon: '🌼', color: '#FF8FB0', ok: () => G.people.some((p) => p.state === 'wait' && p.stage >= 1) },
 };
+const POWERUP_SAY = {   // power-up -> [the pilot's line, the passengers' remarks after it]
+  feather: ['pilot-feather', ['p-faster', 'p-yayfaster']], seat: ['pilot-log', ['p-room']],
+  steak: ['pilot-steak', null], flower: ['pilot-flower', ['p-pretty']],
+};
 function stepPowerups(dt) {
   const L = G.L, c = G.copter;
   if (G.boostT > 0) G.boostT = Math.max(0, G.boostT - dt);
@@ -2634,26 +2638,32 @@ function stepPowerups(dt) {
       const near = G.drops.filter((d) => Math.abs(d.x - c.x) < DROP_NEAR);
       const d = near.length ? pick(rng, near) : G.drops.reduce((a, b) => (Math.abs(a.x - c.x) < Math.abs(b.x - c.x) ? a : b));
       const kind = pick(rng, kinds);
-      G.powerups.push({ kind, x: d.x, y: d.y, z: d.z, vy: 0, phase: 'shake', t: 0, vis: buildPowerup(kind, d.kind) });
+      G.powerups.push({ kind, tree: d.kind, x: d.x, y: d.y, z: d.z, vy: 0, phase: 'shake', t: 0, vis: buildPowerup(kind, d.kind) });
       sfx('rustle');
+      // someone spots a coconut (or, if nobody does, the pilot calls out as it falls: one line per power-up, see REACT_GAP)
+      if (d.kind !== 'apple' && d.kind !== 'pine' && Math.random() < 0.6) voice(c.riders.length && Math.random() < 0.5 ? 'p-coconut' : 'pilot-coconut');
     }
   }
   for (const u of G.powerups) {
     u.t += dt;
-    if (u.phase === 'shake' && u.t > DROP_SHAKE) { u.phase = 'fall'; u.t = 0; }
+    if (u.phase === 'shake' && u.t > DROP_SHAKE) { u.phase = 'fall'; u.t = 0; voice(pick(Math.random, u.tree === 'apple' ? ['pilot-falling', 'pilot-catchit'] : ['pilot-falling', 'pilot-nut', 'pilot-catchit'])); }
     if (u.phase !== 'shake') u.z = approach(u.z, 0.4, dt * 2.2);   // rolls forward to the front of the ledge
     if (u.phase === 'fall') {
       const ground = (L.lake && u.x > L.lake[0] && u.x < L.lake[1] ? -0.15 : Math.max(topAt(u.x), 0)) + NUT_R;
       u.vy -= DROP_GRAVITY * dt; u.y += u.vy * dt;
       if (u.y <= ground) {
         u.y = ground;
-        if (u.vy < -2.5) { u.vy = -u.vy * 0.35; sfx('thump', 0.15); puff(u.x, ground - NUT_R + 0.05, '#CDBFA6', 4, 1); }
-        else { u.vy = 0; u.phase = 'rest'; u.t = 0; }
+        if (u.vy < -2.5) {
+          u.vy = -u.vy * 0.35; puff(u.x, ground - NUT_R + 0.05, '#CDBFA6', 4, 1);
+          if (!u.bounced) sfx('nutdrop');             // the clip has every bounce and the roll in it
+          else if (!sfxBuf.drop) sfx('thump', 0.15);   // the synthesized fallback thumps on each bounce
+          u.bounced = true;
+        } else { u.vy = 0; u.phase = 'rest'; u.t = 0; }
       }
     }
     const dx = clamp(u.x, c.x - copterHX, c.x + copterHX) - u.x, dy = clamp(u.y, c.y, c.y + COPTER_H) - u.y;
     if (dx * dx + dy * dy < POWERUP_R * POWERUP_R) { catchPowerup(u.kind); u.dead = true; puff(u.x, u.y, POWERUPS[u.kind].color, 10, 2.2); puff(u.x, u.y, '#FFFFFF', 6, 1.6); }
-    else if (u.phase === 'rest' && u.t > POWERUP_LIFE) { u.dead = true; puff(u.x, u.y, '#FFFFFF', 6, 1.2); }
+    else if (u.phase === 'rest' && u.t > POWERUP_LIFE) { u.dead = true; puff(u.x, u.y, '#FFFFFF', 6, 1.2); sfx('burst'); voice('pilot-popped'); }
     if (u.dead) u.vis.removeFromParent();
   }
   G.powerups = G.powerups.filter((u) => !u.dead);
@@ -2664,7 +2674,10 @@ function catchPowerup(kind) {
   else if (kind === 'seat') { G.seats = Math.min(SEATS_MAX, G.seats + 1); rebuildCopter(); }
   else if (kind === 'steak') G.food = 1;
   else for (const p of G.people) if (p.state === 'wait' || p.state === 'ride') { p.wait *= 1 - CALM_SHARE; p.jump = 0.35; }
-  sfx('power'); Haptics.buzz('ring'); voice(kind === 'feather' ? 'pilot-ooga' : 'pilot-laugh');
+  // the power-up's own sound and the pilot naming it (it cuts off a "Catch it!"), then now and then a passenger's remark
+  sfx('power-' + kind); Haptics.buzz('ring');
+  const said = POWERUP_SAY[kind], riders = c.riders.length && said[1] && Math.random() < REACT_CHANCE;
+  voice(riders ? [said[0], pick(Math.random, said[1])] : said[0], 2);
   const icon = new THREE.Sprite(new THREE.SpriteMaterial({ map: emojiTex(POWERUPS[kind].icon), transparent: true, depthTest: false, depthWrite: false }));
   icon.renderOrder = 11; world.add(icon); G.pops.push({ icon, t: 0 });
   tbx('powerup', { level: G.lv + 1, kind });
@@ -3101,7 +3114,10 @@ const SFX = {
   chisel: () => { for (let k = 0; k < 3; k++) tone(1900, 0.04, 'triangle', 0.04 * AMBIENCE_VOL, 1500, k * 0.22); },
   crack: () => tone(2600, 0.03, 'square', 0.03 * AMBIENCE_VOL, 1800),
   kids: () => [659, 784, 1047].forEach((f, i) => tone(f, 0.16, 'triangle', 0.15, null, i * 0.07)),
+  nutdrop: () => SFX.thump(0.15),                 // a power-up's first bounce (the clip has all the bounces and the roll)
+  burst: () => tone(780, 0.08, 'triangle', 0.1, 1100),   // a power-up nobody caught pops
 };
+for (const k of Object.keys(POWERUPS)) SFX['power-' + k] = SFX.power;   // each power-up has its own clip, the same synthesized fallback
 function sfx(name, arg) { if (AC && !muted) try { if (!playClip(name, arg)) SFX[name]?.(arg); } catch (e) { /* audio is optional */ } }
 /* recorded effects (ElevenLabs sound effects, listed in the README's Audio credits). Each one's peak is evened out
    when it loads, then played at its own level; a missing clip falls back to the synthesized sound of the same name. */
@@ -3112,7 +3128,8 @@ const SFX_CLIPS = {               // game sound -> [clip, level]; ambience clips
   chomp: ['munch', 0.6], hungry: ['hungry', 0.6], ring: ['ring', 0.6], fanfare: ['fanfare', 0.8], stomp: ['stomp', 0.5],
   kids: ['cheer', 0.5], tweet: ['tweet', 0.3], owl: ['owl', 0.4], snore: ['snore', 0.4], rumble: ['rumble', 0.75],
   roar: ['roar', 0.4], trumpet: ['trumpet', 0.4], blorp: ['blorp', 0.45], bubble: ['bubble', 0.4], chisel: ['chisel', 0.35],
-  crack: ['crack', 0.4],
+  crack: ['crack', 0.4], rustle: ['wobble', 0.6], nutdrop: ['drop', 0.8], burst: ['burst', 0.3],
+  'power-feather': ['feather', 0.5], 'power-seat': ['log', 1.1], 'power-steak': ['steak', 0.9], 'power-flower': ['flower', 0.8],
 };
 const sfxRaw = {}, sfxBuf = {};
 for (const [clip] of Object.values(SFX_CLIPS)) sfxRaw[clip] ??= fetch(`assets/sfx/${clip}.mp3?v=${ASSET_V}`).then((r) => (r.ok ? r.arrayBuffer() : null)).catch(() => null);
@@ -3143,6 +3160,11 @@ const VOICE_LINES = {             // clip -> its words, for the fallback
   'p-yay': 'Yay!', 'p-thanks': 'Thank you!', 'p-wheee': 'Whee!', 'p-flying': "Whee, we're flying!", 'p-hmph': 'Hmph!', 'p-ohmy': 'Oh my!',
   'pilot-ugh': 'Ugh!', 'pilot-ooga': 'Ooga booga!', 'pilot-whoa': 'Whoa!', 'pilot-yum': 'Yum yum!', 'pilot-hungry': "I'm hungry!",
   'pilot-splash': 'Splash!', 'pilot-hopin': 'Hop in!', 'pilot-offyougo': 'Off you go!', 'pilot-hooray': 'Hooray!', 'pilot-laugh': 'Ha ha ha!',
+  // power-ups
+  'pilot-coconut': 'Look, a coconut!', 'pilot-falling': "Look, it's falling!", 'pilot-nut': 'Catch the nut!', 'pilot-catchit': 'Catch it, quick!',
+  'pilot-feather': 'A feather!', 'pilot-log': 'Strong log!', 'pilot-steak': 'Big steak! Yum!', 'pilot-flower': 'Pretty flower!',
+  'pilot-popped': 'Oh, it popped!', 'p-coconut': 'Ooh, a coconut!', 'p-faster': 'Faster!', 'p-yayfaster': 'Yay, faster!',
+  'p-room': 'Room for one more!', 'p-pretty': 'Pretty!',
 };
 const clipRaw = {}, clipBuf = {};
 for (const n of Object.keys(VOICE_LINES)) clipRaw[n] = fetch(`assets/voice/${n}.mp3?v=${ASSET_V}`).then((r) => (r.ok ? r.arrayBuffer() : null)).catch(() => null);

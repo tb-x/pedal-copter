@@ -110,6 +110,11 @@ From level 2 on, every 16–26 seconds a glowing coconut with a power-up's pictu
 way down or land next to it (its picture pops up over the pilot); if nobody does, it blinks and pops after 14 seconds.
 Extra palms are planted where the level has no tree nearby, so there's always one within reach.
 
+Each one sounds and talks: the tree rattles as the coconut wobbles ("Look, a coconut!"), or else the pilot calls
+"Catch it, quick!" as it falls, it bounces and rolls with a wooden clunk, and catching it plays its own sound while the
+pilot names it ("A feather!", "Strong log!", "Big steak! Yum!", "Pretty flower!"), sometimes followed by a passenger
+("Faster!", "Room for one more!", "Pretty!"). One nobody catches pops ("Oh, it popped!").
+
 - 🪶 **Feather**: the copter flies half as fast again for 15 seconds (a meter shows the time left, and it leaves a
   little trail).
 - 🪵 **Log**: one more seat for the rest of the level, up to four (the copter grows a seat and a lamp).
@@ -241,13 +246,14 @@ every so often) and `feast` (share of trips to the campfire). The comment above 
 
 ## Sound
 
-All synthesized in the browser; there are no sound files.
+Recorded ElevenLabs clips (voices, effects, music; see Audio credits) where they exist, and synthesized in the browser for the rest and as the fallback when a clip can't load.
 
 - **The copter**: a buzzy rotor that goes "whup-whup" as the four leaves pass, louder and higher when pedalling hard,
   and a wooden creak on each pedal stroke.
 - **Effects**: lift-off, a thump on landing, a boing for bumps, a splash, hop-in chirps and a hop-out with a cheer,
   a grumble and three stomps when someone gives up, the "full" bleep, munching, a tummy rumble when food runs low,
-  a pterodactyl squawk, a chime for flying through a smoke ring, stars and a fanfare.
+  a pterodactyl squawk, a chime for flying through a smoke ring, stars and a fanfare; for power-ups a wobble in
+  the tree, a bouncing drop, a sound of its own for each one caught and a pop for one left too long.
 - **Music**: three recorded stone-age loops (see Audio credits): a bouncy marimba-and-log-drum one for day, dusk and
   snow levels, a calm one for night and rain, and a fast campfire-party one for the volcano feast. Each is made
   seamless when it loads (a quiet tail trimmed, its last 2 s blended into its start). It dips while someone speaks
@@ -258,7 +264,9 @@ All synthesized in the browser; there are no sound files.
 - **Voices** (recorded, see Audio credits): when someone hops in, a passenger voice says where they're going ("Three!
   Fishing!"). The caveman pilot says "Ugh!" when he bumps into something, "Whoa!" when a pterodactyl hits, "Splash!",
   "Yum yum!" when eating, "I'm hungry!" when food runs low, laughs through a smoke ring and shouts "Hooray!" at the
-  end. Now and then he says "Ooga booga!" or "Hop in!" on take-off and boarding, passengers say "Whee!" in the air
+  end. He spots power-ups ("Look, a coconut!", "Catch the nut!") and names each one caught ("A feather!"), and
+  passengers sometimes chime in ("Faster!", "Room for one more!"). Now and then he says "Ooga booga!" or "Hop in!" on
+  take-off and boarding, passengers say "Whee!" in the air
   and "Yay!" or "Thank you!" when they arrive, a grandma says "Oh my!", and someone who gives up says "Hmph!". One
   line at a time: the stop names always get through, the remarks skip their turn while someone is talking. If a
   recording can't load, the browser's own voice says the words instead.
@@ -295,6 +303,8 @@ credit line. The audio isn't licensed for reuse: it's for this game only.
 | `p-yay`, `p-thanks`, `p-hmph`, `p-ohmy` | Alice | as above | Yay! Thank you! Hmph! Oh my! |
 | `p-wheee`, `p-flying` | Alice | as above (retake: the first "Whee!" was too short) | Whee! / Whee, we're flying! |
 | `pilot-ugh`, `pilot-ooga`, `pilot-whoa`, `pilot-yum`, `pilot-hungry`, `pilot-splash`, `pilot-hopin`, `pilot-offyougo`, `pilot-hooray`, `pilot-laugh` | Roger (stock) | stability 0.45, style 0.3 | Ugh! Ooga booga! Whoa! Yum yum! I'm hungry! Splash! Hop in! Off you go! Hooray! Ha ha ha! |
+| `pilot-coconut`, `pilot-falling`, `pilot-nut`, `pilot-catchit`, `pilot-feather`, `pilot-log`, `pilot-steak`, `pilot-flower`, `pilot-popped` | Roger | as above; ElevenLabs Creator plan (paid), 2026-11-22 | Look, a coconut! Look, it's falling! Catch the nut! Catch it, quick! A feather! Strong log! Big steak! Yum! Pretty flower! Oh, it popped! (power-ups) |
+| `p-coconut`, `p-faster`, `p-yayfaster`, `p-room`, `p-pretty` | Alice | stability 0.5, style 0.2; ElevenLabs Creator plan (paid), 2026-11-22 | Ooh, a coconut! Faster! Yay, faster! Room for one more! Pretty! (power-ups) |
 
 The sound effects in `assets/sfx/` were made with ElevenLabs sound effects (not a beta feature) on the same day and
 plan, two takes each from the prompt below, the better take kept (judged silently: clean start, number of hits,
@@ -323,6 +333,19 @@ loudness). The game evens out each clip's peak when it loads it; levels are in `
 | `bubble` | Gentle hot spring water bubbling softly, a few bubbles rising and popping (2 s) | hot spring stops |
 | `chisel` | Three light taps of a stone hammer chiselling a rock (1 s) | wheel workshop stops |
 | `crack` | A small egg wobbling and making one tiny crack (0.6 s) | dino nest stops |
+
+Power-up effects, made the same way on the same plan on 2026-11-22 (ElevenLabs Creator plan (paid), model
+`eleven_text_to_sound_v2`, three takes each):
+
+| Clip | Prompt (length) | Used for |
+| --- | --- | --- |
+| `wobble` | A coconut wobbling in a palm tree, a few quick light wooden rattles, cartoon, no wind (1 s) | a power-up wobbling in its tree |
+| `drop` | A coconut drops onto stone, two soft hollow wooden bounces then a short roll, cartoon (1.2 s) | it lands, bounces and rolls |
+| `feather` | Feather pickup, a light magical whoosh with a twinkle, cartoon game power-up (0.8 s) | catching the feather |
+| `log` | A chunky wooden log clunk plus a short rope creak, a wooden seat being added, cartoon (1 s) | catching the log |
+| `steak` | A short sizzle then a happy ta-da pluck on a wooden xylophone, cartoon food pickup (1 s) | catching the steak |
+| `flower` | A soft sparkle with a tiny cheerful bell run, gentle magical flower pickup (1 s) | catching the flower |
+| `burst` | One small cartoon pop, a soft bubble bursting, nothing else (0.5 s) | a power-up nobody caught pops |
 
 Any effect whose clip can't load falls back to a synthesized one. Still synthesized on purpose: the rotor whirr and
 pedal creak (they follow the pedalling), lift-off, hop-in chirps, the "full" bleep, stars, wind gusts and raindrops
